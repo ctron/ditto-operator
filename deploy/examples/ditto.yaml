@@ -1,0 +1,6 @@
+kind: Ditto
+apiVersion: iot.eclipse.org/v1alpha1
+metadata:
+  name: test
+  namespace: ditto
+spec: {}
