@@ -1,0 +1,13 @@
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: ditto-operator
+  labels:
+    app.kubernetes.io/name: ditto-operator
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "deployments", "services", "configmaps", "secrets"]
+    verbs: ["create", "update", "delete", "get", "watch", "list"]
+  - apiGroups: ["iot.eclipse.org"]
+    resources: ["dittos", "dittos/status"]
+    verbs: ["create", "update", "delete", "get", "watch", "list"]

@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ditto-operator
+  annotations:
+    image.openshift.io/triggers: |
+      [
+        {
+          "from": {
+            "kind":"ImageStreamTag",
+            "name":"ditto-operator:latest"
+          },
+          "fieldPath":"spec.template.spec.containers[?(@.name==\"operator\")].image"
+        }
+      ]
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ditto-operator
+  template:
+    metadata:
+      labels:
+        app: ditto-operator
+    spec:
+      serviceAccountName: ditto-operator
+      containers:
+        - name: operator
+          image: ditto-operator
+          imagePullPolicy: Always
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
