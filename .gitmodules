@@ -1,3 +1,0 @@
-[submodule "kube-rs"]
-	path = kube-rs
-	url = https://github.com/ctron/kube-rs.git

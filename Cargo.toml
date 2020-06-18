@@ -28,12 +28,10 @@ log = "0.4"
 env_logger = "0.7"
 rand = "0.7"
 sha1 = "0.6"
-operator-framework = { version = "0.1.1", features = [ "patched", "v1_17" ] }
+operator-framework = { version = "0.1.2", features = [ "patched", "v1_17" ] }
 
 [patch.crates-io]
 k8s-openapi = { git = "https://github.com/Arnavion/k8s-openapi.git#b8046d9a" }
 
-kube = { path = "kube-rs/kube" }
+kube = { git = "https://github.com/ctron/kube-rs", branch = "feature/fix_incluster_1" }
 kube-derive = { git = "https://github.com/ctron/kube-rs", branch="feature/meta_mut_1" }
-
-operator-framework = { git = "https://github.com/ctron/operator-framework" }
