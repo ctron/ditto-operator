@@ -53,6 +53,8 @@ pub struct DittoController {
     services: Api<Service>,
 }
 
+pub const DITTO_VERSION: &str = "1.1.1";
+
 impl DittoController {
     pub fn new(namespace: &str, client: Client) -> Self {
         DittoController {

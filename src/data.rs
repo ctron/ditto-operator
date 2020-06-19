@@ -1,3 +1,5 @@
+use super::controller::DITTO_VERSION;
+
 pub fn nginx_conf(name: String, swagger_ui: bool) -> String {
     let mut result = String::new();
 
@@ -143,14 +145,14 @@ http {
     # swagger
     # access API doc on: /apidoc/1 or /apidoc/2
     location /apidoc/ {{
-      rewrite ^/apidoc/([0-9])$ $http_x_forwarded_proto://$http_host/apidoc/?url=//raw.githubusercontent.com/eclipse/ditto/1.1.0/documentation/src/main/resources/openapi/ditto-api-$1.yml  redirect;
-      #rewrite ^/apidoc/([0-9])$ $scheme://$http_host/apidoc/?url=//raw.githubusercontent.com/eclipse/ditto/{{ .Chart.AppVersion }}/documentation/src/main/resources/openapi/ditto-api-$1.yml  redirect;
+      rewrite ^/apidoc/([0-9])$ $http_x_forwarded_proto://$http_host/apidoc/?url=//raw.githubusercontent.com/eclipse/ditto/{version}/documentation/src/main/resources/openapi/ditto-api-$1.yml  redirect;
       proxy_pass                    http://{name}-swaggerui:8080/;
       proxy_http_version            1.1;
       proxy_set_header              Host                $http_host;
     }}
         "#,
-            name=name
+            name=name,
+            version=DITTO_VERSION,
         ).as_str();
     }
 
