@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
     status = "DittoStatus"
 )]
 #[kube(apiextensions = "v1beta1")]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 pub struct DittoSpec {
     pub mongo_db: MongoDb,
     pub enable_dummy_auth: bool,
