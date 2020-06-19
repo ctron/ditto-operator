@@ -304,6 +304,7 @@ dependencies = [
  "kube",
  "kube-derive",
  "log",
+ "openshift-openapi",
  "operator-framework",
  "percent-encoding",
  "rand",
@@ -312,6 +313,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha1",
+ "string-error",
  "tokio",
 ]
 
@@ -671,7 +673,8 @@ dependencies = [
 [[package]]
 name = "k8s-openapi"
 version = "0.8.0"
-source = "git+https://github.com/Arnavion/k8s-openapi.git#b8046d9a#c61411d208add9a04d07c76188e0f8cce832094c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eae6d236dfb2b60d27cdbcb3d20511713aff6d23f9bf2f3d6b594c232ea99e04"
 dependencies = [
  "base64 0.12.2",
  "bytes",
@@ -726,7 +729,8 @@ dependencies = [
 [[package]]
 name = "kube-derive"
 version = "0.35.1"
-source = "git+https://github.com/ctron/kube-rs?branch=feature/meta_mut_1#008bc654462899b8083d7ac0a8a9f801b5a183f6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b090cd3118831d145636422c8a1e6c109928cb56833775c7f84382c9ea2240a8"
 dependencies = [
  "Inflector",
  "proc-macro2",
@@ -948,6 +952,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b631f7e854af39a1739f401cf34a8a013dfe09eac4fa4dba91e9768bd28168d"
 
 [[package]]
+name = "openshift-openapi"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bc32e8115526ba9366d631779e17c6a6dd371ecf6a8d7728506f6ff7eb99780"
+dependencies = [
+ "base64 0.12.2",
+ "bytes",
+ "chrono",
+ "k8s-openapi",
+ "serde",
+ "serde-value",
+ "serde_json",
+]
+
+[[package]]
 name = "openssl"
 version = "0.10.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -982,9 +1001,9 @@ dependencies = [
 
 [[package]]
 name = "operator-framework"
-version = "0.1.2"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a273c58e6b29c73b54155cf3978ef2a6c46b395a177be710c1c0816225c164d"
+checksum = "aa5ef3597432521b538d919788f3e6f2de52cc4e3ea45ee040cfa3d7eef5e8f3"
 dependencies = [
  "anyhow",
  "k8s-openapi",
@@ -1506,6 +1525,12 @@ name = "stdweb-internal-runtime"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "213701ba3370744dcd1a12960caa4843b3d68b4d1c0a5d575e0d65b2ee9d16c0"
+
+[[package]]
+name = "string-error"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "439558b73299d7afdf52c36399c3c812cca10fe5ca08429f38815df5bacf3ef7"
 
 [[package]]
 name = "syn"

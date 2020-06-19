@@ -18,9 +18,11 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::{ObjectMeta, OwnerReference}
 use k8s_openapi::{ByteString, Resource};
 use kube::api::{Meta, PostParams};
 use kube::{Api, Client};
-use std::collections::BTreeMap;
 
-use operator_framework::install::config::AppendData;
+use std::collections::BTreeMap;
+use std::fmt::Display;
+
+use operator_framework::install::config::{AppendBinary, AppendString};
 use operator_framework::install::container::ApplyContainer;
 use operator_framework::install::container::ApplyEnvironmentVariable;
 use operator_framework::install::container::ApplyPort;
@@ -38,11 +40,17 @@ use k8s_openapi::api::core::v1::{
 };
 use k8s_openapi::api::rbac::v1::{PolicyRule, Role, RoleBinding, Subject};
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
-use operator_framework::process::create_or_update;
+
+use openshift_openapi::api::route::v1::{Route, RoutePort};
+
+use operator_framework::process::create_or_update_by;
 use operator_framework::tracker::{ConfigTracker, Trackable};
 use operator_framework::utils::UseOrCreate;
+
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
+
+use log::info;
 
 pub struct DittoController {
     client: Client,
@@ -53,12 +61,70 @@ pub struct DittoController {
     roles: Api<Role>,
     role_bindings: Api<RoleBinding>,
     services: Api<Service>,
+    routes: Option<Api<Route>>,
 }
 
+pub const DITTO_REGISTRY: &str = "docker.io/eclipse";
 pub const DITTO_VERSION: &str = "1.1.1";
 
+fn new_secret(meta: ObjectMeta) -> Secret {
+    Secret {
+        metadata: Some(meta),
+        ..Default::default()
+    }
+}
+
+fn new_configmap(meta: ObjectMeta) -> ConfigMap {
+    ConfigMap {
+        metadata: Some(meta),
+        ..Default::default()
+    }
+}
+
+fn new_service_account(meta: ObjectMeta) -> ServiceAccount {
+    ServiceAccount {
+        metadata: Some(meta),
+        ..Default::default()
+    }
+}
+
+fn new_service(meta: ObjectMeta) -> Service {
+    Service {
+        metadata: Some(meta),
+        ..Default::default()
+    }
+}
+
+fn new_deployment(meta: ObjectMeta) -> Deployment {
+    Deployment {
+        metadata: Some(meta),
+        ..Default::default()
+    }
+}
+
+fn new_role(meta: ObjectMeta) -> Role {
+    Role {
+        metadata: Some(meta),
+        ..Default::default()
+    }
+}
+
+fn new_role_binding(meta: ObjectMeta) -> RoleBinding {
+    RoleBinding {
+        metadata: Some(meta),
+        ..Default::default()
+    }
+}
+
+fn new_route(meta: ObjectMeta) -> Route {
+    Route {
+        metadata: Some(meta),
+        ..Default::default()
+    }
+}
+
 impl DittoController {
-    pub fn new(namespace: &str, client: Client) -> Self {
+    pub fn new(namespace: &str, client: Client, has_openshift: bool) -> Self {
         DittoController {
             client: client.clone(),
             deployments: Api::namespaced(client.clone(), &namespace),
@@ -68,7 +134,19 @@ impl DittoController {
             role_bindings: Api::namespaced(client.clone(), &namespace),
             services: Api::namespaced(client.clone(), &namespace),
             configmaps: Api::namespaced(client.clone(), &namespace),
+            routes: if has_openshift {
+                Some(Api::namespaced(client.clone(), &namespace))
+            } else {
+                None
+            },
         }
+    }
+
+    fn image_name<S>(&self, base: S) -> String
+    where
+        S: ToString + Display,
+    {
+        format!("{}/{}:{}", DITTO_REGISTRY, base, DITTO_VERSION)
     }
 
     pub async fn reconcile(&self, ditto: &Ditto) -> Result<()> {
@@ -84,10 +162,11 @@ impl DittoController {
 
         let ditto_tracker = &mut ConfigTracker::new();
 
-        create_or_update(
+        create_or_update_by(
             &self.secrets,
             Some(&namespace),
             prefix.clone() + "-gateway-secret",
+            new_secret,
             |mut secret| {
                 secret.data.use_or_create(|data| {
                     data.entry("devops-password".into()).or_insert_with(|| {
@@ -108,10 +187,11 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.secrets,
             Some(&namespace),
             prefix.clone() + "-mongodb-secret",
+            new_secret,
             |mut secret| {
                 for n in vec![
                     "concierge",
@@ -129,7 +209,7 @@ impl DittoController {
                             }
                             _ => "".to_string(),
                         };
-                    secret.append_data(
+                    secret.append_string(
                         format!("{}-uri", n),
                         format!(
                             "mongodb://{}{}:{}/{}",
@@ -143,29 +223,37 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.service_accounts,
             Some(&namespace),
             &service_account_name,
+            new_service_account,
             |service_account| Ok(service_account),
         )
         .await?;
 
-        create_or_update(&self.roles, Some(&namespace), &prefix, |mut role| {
-            role.rules = Some(vec![PolicyRule {
-                api_groups: Some(vec!["".into()]),
-                resources: Some(vec!["pods".into()]),
-                verbs: vec!["get".into(), "watch".into(), "list".into()],
-                ..Default::default()
-            }]);
-            Ok(role)
-        })
+        create_or_update_by(
+            &self.roles,
+            Some(&namespace),
+            &prefix,
+            new_role,
+            |mut role| {
+                role.rules = Some(vec![PolicyRule {
+                    api_groups: Some(vec!["".into()]),
+                    resources: Some(vec!["pods".into()]),
+                    verbs: vec!["get".into(), "watch".into(), "list".into()],
+                    ..Default::default()
+                }]);
+                Ok(role)
+            },
+        )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.role_bindings,
             Some(&namespace),
             format!("{}", prefix),
+            new_role_binding,
             |mut role_binding| {
                 role_binding.role_ref.kind = Role::KIND.to_string();
                 role_binding.role_ref.api_group = Role::GROUP.to_string();
@@ -182,58 +270,65 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-concierge",
+            new_deployment,
             |obj| self.reconcile_concierge_deployment(&ditto, obj, ditto_tracker),
         )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-connectivity",
+            new_deployment,
             |obj| self.reconcile_connectivity_deployment(&ditto, obj, ditto_tracker),
         )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-gateway",
+            new_deployment,
             |obj| self.reconcile_gateway_deployment(&ditto, obj, ditto_tracker),
         )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-policies",
+            new_deployment,
             |obj| self.reconcile_policies_deployment(&ditto, obj, ditto_tracker),
         )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-things",
+            new_deployment,
             |obj| self.reconcile_things_deployment(&ditto, obj, ditto_tracker),
         )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-things-search",
+            new_deployment,
             |obj| self.reconcile_things_search_deployment(&ditto, obj, ditto_tracker),
         )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.services,
             Some(&namespace),
             prefix.clone() + "-gateway",
+            new_service,
             |mut service| {
                 service.spec.use_or_create(|spec| {
                     // set labels
@@ -260,10 +355,11 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.services,
             Some(&namespace),
             prefix.clone() + "-nginx",
+            new_service,
             |mut service| {
                 service.spec.use_or_create(|spec| {
                     // set labels
@@ -290,10 +386,11 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.services,
             Some(&namespace),
             prefix.clone() + "-swaggerui",
+            new_service,
             |mut service| {
                 service.spec.use_or_create(|spec| {
                     // set labels
@@ -322,106 +419,129 @@ impl DittoController {
 
         let mut nginx_tracker = &mut ConfigTracker::new();
 
-        create_or_update(
+        create_or_update_by(
             &self.configmaps,
             Some(&namespace),
             prefix.clone() + "-swaggerui-api",
+            new_configmap,
             |mut cm| {
-                cm.append_data("ditto-api-v1.yaml", include_str!("data/ditto-api-v1.yaml"));
-                cm.append_data("ditto-api-v2.yaml", include_str!("data/ditto-api-v2.yaml"));
+                cm.append_string("ditto-api-v1.yaml", include_str!("data/ditto-api-v1.yaml"));
+                cm.append_string("ditto-api-v2.yaml", include_str!("data/ditto-api-v2.yaml"));
                 cm.track_with(&mut nginx_tracker);
                 Ok(cm)
             },
         )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.configmaps,
             Some(&namespace),
             prefix.clone() + "-nginx-conf",
+            new_configmap,
             |mut cm| {
-                cm.append_data("nginx.conf", data::nginx_conf(ditto.name(), true));
+                cm.append_string("nginx.conf", data::nginx_conf(ditto.name(), true));
                 cm.track_with(&mut nginx_tracker);
                 Ok(cm)
             },
         )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.configmaps,
             Some(&namespace),
             prefix.clone() + "-nginx-htpasswd",
+            new_configmap,
             |mut cm| {
-                cm.append_data("nginx.htpasswd", "ditto:A6BgmB8IEtPTs");
+                cm.append_string("nginx.htpasswd", "ditto:A6BgmB8IEtPTs");
                 cm.track_with(&mut nginx_tracker);
                 Ok(cm)
             },
         )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.configmaps,
             Some(&namespace),
             prefix.clone() + "-nginx-cors",
+            new_configmap,
             |mut cm| {
-                cm.append_data("nginx-cors.conf", include_str!("data/nginx.cors"));
+                cm.append_string("nginx-cors.conf", include_str!("data/nginx.cors"));
                 cm.track_with(&mut nginx_tracker);
                 Ok(cm)
             },
         )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.configmaps,
             Some(&namespace),
-            prefix.clone() + "-nginx-index",
+            prefix.clone() + "-nginx-data",
+            new_configmap,
             |mut cm| {
-                cm.append_data("index.html", include_str!("data/index.html"));
+                cm.append_string("index.html", include_str!("data/index.html"));
+                cm.append_string("ditto-up.svg", include_str!("data/ditto-up.svg"));
+                cm.append_string("ditto-down.svg", include_str!("data/ditto-down.svg"));
+                cm.append_string("ditto-api-v1.yaml", include_str!("data/ditto-api-v1.yaml"));
+                cm.append_string("ditto-api-v2.yaml", include_str!("data/ditto-api-v2.yaml"));
+                cm.append_binary(
+                    "favicon-16x16.png",
+                    &include_bytes!("data/favicon-16x16.png")[..],
+                );
+                cm.append_binary(
+                    "favicon-32x32.png",
+                    &include_bytes!("data/favicon-32x32.png")[..],
+                );
+                cm.append_binary(
+                    "favicon-96x96.png",
+                    &include_bytes!("data/favicon-96x96.png")[..],
+                );
                 cm.track_with(&mut nginx_tracker);
                 Ok(cm)
             },
         )
         .await?;
 
-        create_or_update(
-            &self.configmaps,
-            Some(&namespace),
-            prefix.clone() + "-nginx-ditto-up",
-            |mut cm| {
-                cm.append_data("ditto-up.svg", include_str!("data/ditto-up.svg"));
-                cm.track_with(&mut nginx_tracker);
-                Ok(cm)
-            },
-        )
-        .await?;
-
-        create_or_update(
-            &self.configmaps,
-            Some(&namespace),
-            prefix.clone() + "-nginx-ditto-down",
-            |mut cm| {
-                cm.append_data("ditto-down.svg", include_str!("data/ditto-down.svg"));
-                cm.track_with(&mut nginx_tracker);
-                Ok(cm)
-            },
-        )
-        .await?;
-
-        create_or_update(
+        create_or_update_by(
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-swaggerui",
+            new_deployment,
             |obj| self.reconcile_swaggerui_deployment(&ditto, obj),
         )
         .await?;
 
-        create_or_update(
+        create_or_update_by(
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-nginx",
+            new_deployment,
             |obj| self.reconcile_nginx_deployment(&ditto, obj, &nginx_tracker),
         )
         .await?;
+
+        if let Some(ref routes) = self.routes {
+            create_or_update_by(
+                routes,
+                Some(&namespace),
+                prefix.clone() + "-console",
+                new_route,
+                |mut route| {
+                    route.spec.tls.use_or_create(|tls| {
+                        tls.termination = "Edge".into();
+                        tls.insecure_edge_termination_policy = Some("None".into());
+                    });
+                    route.spec.port = Some(RoutePort {
+                        target_port: IntOrString::String("http".into()),
+                    });
+                    route.spec.to.kind = "Service".into();
+                    route.spec.to.name = prefix.clone() + "-nginx";
+                    route.spec.to.weight = 100;
+
+                    Ok(route)
+                },
+            )
+            .await?;
+        }
 
         ditto.status = Some(DittoStatus {
             phase: "Active".into(),
@@ -450,7 +570,7 @@ impl DittoController {
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            "docker.io/eclipse/ditto-concierge:1.1.0",
+            self.image_name("ditto-concierge"),
             Some("concierge-uri"),
             config_tracker,
         )
@@ -465,7 +585,7 @@ impl DittoController {
         let mut deployment = self.reconcile_default_deployment(
             ditto,
             deployment,
-            "docker.io/eclipse/ditto-gateway:1.1.0",
+            self.image_name("ditto-gateway"),
             None,
             config_tracker,
         )?;
@@ -506,7 +626,7 @@ impl DittoController {
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            "docker.io/eclipse/ditto-connectivity:1.1.0",
+            self.image_name("ditto-connectivity"),
             Some("connectivity-uri"),
             config_tracker,
         )
@@ -521,7 +641,7 @@ impl DittoController {
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            "docker.io/eclipse/ditto-policies:1.1.0",
+            self.image_name("ditto-policies"),
             Some("policies-uri"),
             config_tracker,
         )
@@ -536,7 +656,7 @@ impl DittoController {
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            "docker.io/eclipse/ditto-things:1.1.0",
+            self.image_name("ditto-things"),
             Some("things-uri"),
             config_tracker,
         )
@@ -551,20 +671,23 @@ impl DittoController {
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            "docker.io/eclipse/ditto-things-search:1.1.0",
+            self.image_name("ditto-things-search"),
             Some("searchDB-uri"),
             config_tracker,
         )
     }
 
-    fn reconcile_default_deployment(
+    fn reconcile_default_deployment<S>(
         &self,
         ditto: &Ditto,
         mut deployment: Deployment,
-        image_name: &str,
+        image_name: S,
         uri_key: Option<&str>,
         config_tracker: &ConfigTracker,
-    ) -> Result<Deployment> {
+    ) -> Result<Deployment>
+    where
+        S: ToString,
+    {
         let prefix = ditto.name();
 
         let mut labels = BTreeMap::new();
@@ -681,9 +804,6 @@ impl DittoController {
                     ("conf", "nginx-conf"),
                     ("htpasswd", "nginx-htpasswd"),
                     ("cors", "nginx-cors"),
-                    ("index", "nginx-index"),
-                    ("ditto-down", "nginx-ditto-down"),
-                    ("ditto-up", "nginx-ditto-up"),
                 ] {
                     volumes.push(Volume {
                         name: format!("nginx-{}", n.0),
@@ -694,6 +814,14 @@ impl DittoController {
                         ..Default::default()
                     });
                 }
+                volumes.push(Volume {
+                    name: "nginx-data".into(),
+                    config_map: Some(ConfigMapVolumeSource {
+                        name: Some(prefix.clone() + "-nginx-data"),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                });
                 for n in vec!["cache", "run"] {
                     volumes.push(Volume {
                         name: format!("nginx-{}", n),
@@ -726,17 +854,7 @@ impl DittoController {
                         "/etc/nginx/nginx-cors.conf",
                         Some("nginx-cors.conf"),
                     ),
-                    ("index", "/etc/nginx/html/index.html", Some("index.html")),
-                    (
-                        "ditto-down",
-                        "/etc/nginx/html/ditto-down.svg",
-                        Some("ditto-down.svg"),
-                    ),
-                    (
-                        "ditto-up",
-                        "/etc/nginx/html/ditto-up.svg",
-                        Some("ditto-up.svg"),
-                    ),
+                    ("data", "/etc/nginx/html", None),
                     ("cache", "/var/cache/nginx", None),
                     ("run", "/run/nginx", None),
                 ] {

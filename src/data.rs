@@ -145,14 +145,13 @@ http {
     # swagger
     # access API doc on: /apidoc/1 or /apidoc/2
     location /apidoc/ {{
-      rewrite ^/apidoc/([0-9])$ $http_x_forwarded_proto://$http_host/apidoc/?url=//raw.githubusercontent.com/eclipse/ditto/{version}/documentation/src/main/resources/openapi/ditto-api-$1.yml redirect;
+      rewrite ^/apidoc/([0-9])$ $http_x_forwarded_proto://$http_host/apidoc/?url=/ditto-api-v$1.yaml redirect;
       proxy_pass                    http://{name}-swaggerui:8080/;
       proxy_http_version            1.1;
       proxy_set_header              Host                $http_host;
     }}
         "#,
             name=name,
-            version=DITTO_VERSION,
         ).as_str();
     }
 

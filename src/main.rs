@@ -23,6 +23,8 @@ use crd::Ditto;
 use crate::controller::DittoController;
 use async_std::sync::{Arc, Mutex};
 
+use std::fmt;
+
 async fn run_once(controller: &Arc<Mutex<DittoController>>, crds: Vec<Ditto>) {
     for crd in crds {
         let r = controller.lock().await.reconcile(&crd).await;
@@ -33,6 +35,21 @@ async fn run_once(controller: &Arc<Mutex<DittoController>>, crds: Vec<Ditto>) {
             }
             _ => {}
         }
+    }
+}
+
+use std::error::Error;
+
+#[derive(Debug, Clone)]
+struct StringError {
+    message: String,
+}
+
+impl Error for StringError {}
+
+impl fmt::Display for StringError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", &self.message)
     }
 }
 
@@ -51,7 +68,19 @@ async fn main() -> anyhow::Result<()> {
 
     let rf2 = rf.clone(); // read from a clone in a task
 
-    let controller = Arc::new(Mutex::new(DittoController::new(&namespace, client)));
+    let has_openshift = std::env::var_os("HAS_OPENSHIFT")
+        .map(|s| s.into_string())
+        .transpose()
+        .map_err(|err| StringError {
+            message: err.to_string_lossy().into(),
+        })?
+        .map_or(false, |s| s == "true");
+
+    let controller = Arc::new(Mutex::new(DittoController::new(
+        &namespace,
+        client,
+        has_openshift,
+    )));
     let loop_controller = controller.clone();
 
     log::info!("Starting operator...");
