@@ -1,5 +1,0 @@
-packageName: ditto-community-operator
-channels:
-  - name: alpha
-    currentCSV: ditto-community-operator.v0.1.0
-defaultChannel: alpha
