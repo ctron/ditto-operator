@@ -6,10 +6,10 @@ metadata:
     app.kubernetes.io/name: ditto-operator
 rules:
   - apiGroups: [""]
-    resources: ["pods", "services", "configmaps", "secrets", "serviceaccounts"]
+    resources: ["pods", "services", "services", "configmaps", "secrets", "serviceaccounts"]
     verbs: ["create", "update", "delete", "get", "watch", "list"]
   - apiGroups: ["apps"]
-    resources: ["deployments"]
+    resources: ["deployments", "deployments" ]
     verbs: ["create", "update", "delete", "get", "watch", "list"]
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings"]
@@ -18,5 +18,5 @@ rules:
     resources: ["routes"]
     verbs: ["create", "update", "delete", "get", "watch", "list"]
   - apiGroups: ["iot.eclipse.org"]
-    resources: ["dittos", "dittos/status"]
+    resources: ["dittos", "dittos/status", "dittos/finalizers"]
     verbs: ["create", "update", "delete", "get", "watch", "list"]
