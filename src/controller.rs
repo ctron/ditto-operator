@@ -220,14 +220,6 @@ impl DittoController {
         .await?;
 
         create_or_update(
-            &self.deployments,
-            Some(&namespace),
-            prefix.clone() + "-nginx",
-            |obj| self.reconcile_nginx_deployment(&ditto, obj),
-        )
-        .await?;
-
-        create_or_update(
             &self.services,
             Some(&namespace),
             prefix.clone() + "-gateway",
@@ -317,6 +309,8 @@ impl DittoController {
         )
         .await?;
 
+        let mut nginx_tracker = &mut ConfigTracker::new();
+
         create_or_update(
             &self.configmaps,
             Some(&namespace),
@@ -324,6 +318,7 @@ impl DittoController {
             |mut cm| {
                 cm.append_data("ditto-api-v1.yaml", include_str!("data/ditto-api-v1.yaml"));
                 cm.append_data("ditto-api-v2.yaml", include_str!("data/ditto-api-v2.yaml"));
+                cm.track_with(&mut nginx_tracker);
                 Ok(cm)
             },
         )
@@ -335,6 +330,7 @@ impl DittoController {
             prefix.clone() + "-nginx-conf",
             |mut cm| {
                 cm.append_data("nginx.conf", data::nginx_conf(ditto.name(), true));
+                cm.track_with(&mut nginx_tracker);
                 Ok(cm)
             },
         )
@@ -346,6 +342,7 @@ impl DittoController {
             prefix.clone() + "-nginx-htpasswd",
             |mut cm| {
                 cm.append_data("nginx.htpasswd", "ditto:A6BgmB8IEtPTs");
+                cm.track_with(&mut nginx_tracker);
                 Ok(cm)
             },
         )
@@ -357,6 +354,7 @@ impl DittoController {
             prefix.clone() + "-nginx-cors",
             |mut cm| {
                 cm.append_data("nginx-cors.conf", include_str!("data/nginx.cors"));
+                cm.track_with(&mut nginx_tracker);
                 Ok(cm)
             },
         )
@@ -368,6 +366,7 @@ impl DittoController {
             prefix.clone() + "-nginx-index",
             |mut cm| {
                 cm.append_data("index.html", include_str!("data/index.html"));
+                cm.track_with(&mut nginx_tracker);
                 Ok(cm)
             },
         )
@@ -379,6 +378,7 @@ impl DittoController {
             prefix.clone() + "-nginx-ditto-up",
             |mut cm| {
                 cm.append_data("ditto-up.svg", include_str!("data/ditto-up.svg"));
+                cm.track_with(&mut nginx_tracker);
                 Ok(cm)
             },
         )
@@ -390,6 +390,7 @@ impl DittoController {
             prefix.clone() + "-nginx-ditto-down",
             |mut cm| {
                 cm.append_data("ditto-down.svg", include_str!("data/ditto-down.svg"));
+                cm.track_with(&mut nginx_tracker);
                 Ok(cm)
             },
         )
@@ -400,6 +401,14 @@ impl DittoController {
             Some(&namespace),
             prefix.clone() + "-swaggerui",
             |obj| self.reconcile_swaggerui_deployment(&ditto, obj),
+        )
+        .await?;
+
+        create_or_update(
+            &self.deployments,
+            Some(&namespace),
+            prefix.clone() + "-nginx",
+            |obj| self.reconcile_nginx_deployment(&ditto, obj, &nginx_tracker),
         )
         .await?;
 
@@ -625,6 +634,7 @@ impl DittoController {
         &self,
         ditto: &Ditto,
         mut deployment: Deployment,
+        tracker: &ConfigTracker,
     ) -> Result<Deployment> {
         let prefix = ditto.name();
 
@@ -644,23 +654,18 @@ impl DittoController {
             }]);
         }
 
-        if deployment.spec.is_none() {
-            deployment.spec = Some(Default::default());
-        }
-
-        if let Some(ref mut spec) = deployment.spec {
+        deployment.spec.use_or_create_err(|spec| {
             spec.selector.match_labels = Some(labels.clone());
-            spec.template.metadata = Some(ObjectMeta {
-                labels: Some(labels.clone()),
-                ..Default::default()
+            spec.template.metadata.use_or_create(|metadata| {
+                metadata.labels = Some(labels.clone());
+                metadata.annotations.use_or_create(|annotations| {
+                    annotations.insert("config-hash".into(), tracker.current_hash())
+                });
             });
 
-            if spec.template.spec.is_none() {
-                spec.template.spec = Some(Default::default());
-            }
+            spec.template.spec.use_or_create_err(|template_spec| {
+                let mut volumes = vec![];
 
-            let mut volumes = vec![];
-            if let Some(template_spec) = &mut spec.template.spec {
                 for n in vec![
                     ("conf", "nginx-conf"),
                     ("htpasswd", "nginx-htpasswd"),
@@ -686,7 +691,8 @@ impl DittoController {
                     });
                 }
                 template_spec.volumes = Some(volumes);
-            }
+                Ok(())
+            })?;
 
             spec.template.apply_container("nginx", |container| {
                 container.image = Some("docker.io/nginx:1.17.5-alpine".into());
@@ -734,7 +740,9 @@ impl DittoController {
 
                 Ok(())
             })?;
-        }
+
+            Ok(())
+        })?;
 
         Ok(deployment)
     }
