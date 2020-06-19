@@ -35,13 +35,17 @@ pub struct DittoSpec {
 pub struct MongoDb {
     pub host: String,
     pub port: u16,
+    pub username: Option<String>,
+    pub password: Option<String>,
 }
 
 impl Default for MongoDb {
     fn default() -> Self {
         MongoDb {
             port: 27017,
-            host: String::new(),
+            host: Default::default(),
+            username: Default::default(),
+            password: Default::default(),
         }
     }
 }

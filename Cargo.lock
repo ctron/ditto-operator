@@ -305,6 +305,7 @@ dependencies = [
  "kube-derive",
  "log",
  "operator-framework",
+ "percent-encoding",
  "rand",
  "serde",
  "serde_derive",

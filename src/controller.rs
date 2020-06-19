@@ -27,6 +27,8 @@ use operator_framework::install::container::ApplyPort;
 use operator_framework::install::container::SetArgs;
 use operator_framework::install::container::SetResources;
 
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+
 use crate::data;
 
 use k8s_openapi::api::core::v1::{
@@ -118,11 +120,20 @@ impl DittoController {
                     "searchDB",
                     "policies",
                 ] {
+                    let credentials =
+                        match (&ditto.spec.mongo_db.username, &ditto.spec.mongo_db.password) {
+                            (Some(username), Some(password)) => {
+                                let username = utf8_percent_encode(&username, NON_ALPHANUMERIC);
+                                let password = utf8_percent_encode(&password, NON_ALPHANUMERIC);
+                                format!("{}:{}@", username, password)
+                            }
+                            _ => "".to_string(),
+                        };
                     secret.append_data(
                         format!("{}-uri", n),
                         format!(
-                            "mongodb://{}:{}/{}",
-                            ditto.spec.mongo_db.host, ditto.spec.mongo_db.port, n,
+                            "mongodb://{}{}:{}/{}",
+                            credentials, ditto.spec.mongo_db.host, ditto.spec.mongo_db.port, n,
                         ),
                     );
                 }
