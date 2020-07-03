@@ -953,9 +953,9 @@ checksum = "0b631f7e854af39a1739f401cf34a8a013dfe09eac4fa4dba91e9768bd28168d"
 
 [[package]]
 name = "openshift-openapi"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bc32e8115526ba9366d631779e17c6a6dd371ecf6a8d7728506f6ff7eb99780"
+checksum = "bfd3701f459442dbb127d5752426c02671780622aab7b78c7c5943cdee3a5760"
 dependencies = [
  "base64 0.12.2",
  "bytes",
