@@ -1,5 +1,3 @@
-use super::controller::DITTO_VERSION;
-
 pub fn nginx_conf(name: String, swagger_ui: bool) -> String {
     let mut result = String::new();
 
