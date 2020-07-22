@@ -4,7 +4,7 @@ on: [push, pull_request]
 
 jobs:
   lint-chart:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -16,12 +16,30 @@ jobs:
           command: lint
           config: .github/ct.yaml
 
+  build:
+    name: build
+    runs-on: ubuntu-18.04
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          components: rustfmt, clippy
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
 
   install-chart:
     name: install-chart
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     needs:
       - lint-chart
+      - build
     strategy:
       matrix:
         k8s:
