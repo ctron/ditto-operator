@@ -55,13 +55,13 @@ jobs:
       - name: Build container
         run: |
           docker build . --file .github/Dockerfile \
-            --tag docker.pkg.github.com/${{ github.repository }}/ditto-operator:latest
+            --tag docker.pkg.github.com/${{ github.repository }}/ditto-operator:ci
 
       - name: Login to github container repository
         run: docker login -u ${{ github.repository_owner }} -p ${{ secrets.GITHUB_TOKEN }} docker.pkg.github.com
 
       - name: Push latest to github container repository
-        run: docker push docker.pkg.github.com/${{ github.repository }}/ditto-operator:latest
+        run: docker push docker.pkg.github.com/${{ github.repository }}/ditto-operator:ci
 
   install-chart:
     name: install-chart
