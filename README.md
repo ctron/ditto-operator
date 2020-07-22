@@ -1,5 +1,16 @@
 ## Install the operator
 
+You need to install the operator. Once you have installed the operator, you can create a new Ditto instance by
+create a new custom resource of type `Ditto`.
+
+### Using OperatorHub
+
+The operator is available on [OperatorHub](https://operatorhub.io/operator/ditto-operator).
+
+### Using Helm
+
+You can also install the operator using [Helm](https://helm.sh/):
+
     helm install ditto-operator ./helm/ditto-operator
 
 ## MongoDB
