@@ -47,7 +47,6 @@ jobs:
       - name: Build container
         run: |
           docker build . --file .github/workflows/Dockerfile \
-            --tag quay.io/ctron/ditto-operator:${TAG} \
             --tag docker.pkg.github.com/${{ github.repository }}/ditto-operator:latest
 
       - name: Login to github container repository
