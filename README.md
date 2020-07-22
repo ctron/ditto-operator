@@ -34,4 +34,3 @@ spec:
   mongoDb:
     host: mongodb
 ~~~
-
