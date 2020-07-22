@@ -35,7 +35,7 @@ use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use crate::data;
 
 use k8s_openapi::api::core::v1::{
-    ConfigMap, ConfigMapVolumeSource, Container, HTTPGetAction, PodSpec, Probe, Secret, Service,
+    ConfigMap, ConfigMapVolumeSource, Container, HTTPGetAction, Probe, Secret, Service,
     ServiceAccount, ServicePort, Volume, VolumeMount,
 };
 use k8s_openapi::api::rbac::v1::{PolicyRule, Role, RoleBinding, Subject};
