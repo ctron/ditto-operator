@@ -1011,7 +1011,7 @@ impl DittoController {
         labels.insert("app.kubernetes.io/name".into(), name.clone());
         labels.insert(
             "app.kubernetes.io/instance".into(),
-            format!("{}-{}", name, prefix),
+            format!("{}-{}", name, ditto.name()),
         );
         labels.insert("app.kubernetes.io/part-of".into(), ditto.name());
         labels.insert("app.kubernetes.io/version".into(), DITTO_VERSION.into());
