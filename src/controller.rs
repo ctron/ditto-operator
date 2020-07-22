@@ -15,7 +15,7 @@ use anyhow::Result;
 use crate::crd::{Ditto, DittoStatus};
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{ObjectMeta, OwnerReference};
-use k8s_openapi::{ByteString, Resource};
+use k8s_openapi::{ByteString, Metadata, Resource};
 use kube::api::{Meta, PostParams};
 use kube::{Api, Client};
 
@@ -34,23 +34,20 @@ use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use crate::data;
 
 use k8s_openapi::api::core::v1::{
-    ConfigMap, ConfigMapVolumeSource, Container, ContainerPort, EmptyDirVolumeSource,
-    HTTPGetAction, PodSpec, Probe, Secret, Service, ServiceAccount, ServicePort, Volume,
-    VolumeMount,
+    ConfigMap, ConfigMapVolumeSource, Container, EmptyDirVolumeSource, HTTPGetAction, PodSpec,
+    Probe, Secret, Service, ServiceAccount, ServicePort, Volume, VolumeMount,
 };
 use k8s_openapi::api::rbac::v1::{PolicyRule, Role, RoleBinding, Subject};
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 
 use openshift_openapi::api::route::v1::{Route, RoutePort};
 
-use operator_framework::process::create_or_update_by;
+use operator_framework::process::create_or_update;
 use operator_framework::tracker::{ConfigTracker, Trackable};
 use operator_framework::utils::UseOrCreate;
 
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
-
-use log::info;
 
 pub struct DittoController {
     client: Client,
@@ -65,63 +62,8 @@ pub struct DittoController {
 }
 
 pub const DITTO_REGISTRY: &str = "docker.io/eclipse";
-pub const DITTO_VERSION: &str = "1.1.1";
-
-fn new_secret(meta: ObjectMeta) -> Secret {
-    Secret {
-        metadata: Some(meta),
-        ..Default::default()
-    }
-}
-
-fn new_configmap(meta: ObjectMeta) -> ConfigMap {
-    ConfigMap {
-        metadata: Some(meta),
-        ..Default::default()
-    }
-}
-
-fn new_service_account(meta: ObjectMeta) -> ServiceAccount {
-    ServiceAccount {
-        metadata: Some(meta),
-        ..Default::default()
-    }
-}
-
-fn new_service(meta: ObjectMeta) -> Service {
-    Service {
-        metadata: Some(meta),
-        ..Default::default()
-    }
-}
-
-fn new_deployment(meta: ObjectMeta) -> Deployment {
-    Deployment {
-        metadata: Some(meta),
-        ..Default::default()
-    }
-}
-
-fn new_role(meta: ObjectMeta) -> Role {
-    Role {
-        metadata: Some(meta),
-        ..Default::default()
-    }
-}
-
-fn new_role_binding(meta: ObjectMeta) -> RoleBinding {
-    RoleBinding {
-        metadata: Some(meta),
-        ..Default::default()
-    }
-}
-
-fn new_route(meta: ObjectMeta) -> Route {
-    Route {
-        metadata: Some(meta),
-        ..Default::default()
-    }
-}
+pub const DITTO_VERSION: &str = "1.1.3";
+pub const KUBERNETES_LABEL_COMPONENT: &str = "app.kubernetes.io/component";
 
 impl DittoController {
     pub fn new(namespace: &str, client: Client, has_openshift: bool) -> Self {
@@ -162,11 +104,10 @@ impl DittoController {
 
         let ditto_tracker = &mut ConfigTracker::new();
 
-        create_or_update_by(
+        create_or_update(
             &self.secrets,
             Some(&namespace),
             prefix.clone() + "-gateway-secret",
-            new_secret,
             |mut secret| {
                 secret.data.use_or_create(|data| {
                     data.entry("devops-password".into()).or_insert_with(|| {
@@ -187,11 +128,10 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.secrets,
             Some(&namespace),
             prefix.clone() + "-mongodb-secret",
-            new_secret,
             |mut secret| {
                 for n in vec![
                     "concierge",
@@ -223,37 +163,29 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.service_accounts,
             Some(&namespace),
             &service_account_name,
-            new_service_account,
             |service_account| Ok(service_account),
         )
         .await?;
 
-        create_or_update_by(
-            &self.roles,
-            Some(&namespace),
-            &prefix,
-            new_role,
-            |mut role| {
-                role.rules = Some(vec![PolicyRule {
-                    api_groups: Some(vec!["".into()]),
-                    resources: Some(vec!["pods".into()]),
-                    verbs: vec!["get".into(), "watch".into(), "list".into()],
-                    ..Default::default()
-                }]);
-                Ok(role)
-            },
-        )
+        create_or_update(&self.roles, Some(&namespace), &prefix, |mut role| {
+            role.rules = Some(vec![PolicyRule {
+                api_groups: Some(vec!["".into()]),
+                resources: Some(vec!["pods".into()]),
+                verbs: vec!["get".into(), "watch".into(), "list".into()],
+                ..Default::default()
+            }]);
+            Ok(role)
+        })
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.role_bindings,
             Some(&namespace),
             format!("{}", prefix),
-            new_role_binding,
             |mut role_binding| {
                 role_binding.role_ref.kind = Role::KIND.to_string();
                 role_binding.role_ref.api_group = Role::GROUP.to_string();
@@ -270,65 +202,58 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-concierge",
-            new_deployment,
             |obj| self.reconcile_concierge_deployment(&ditto, obj, ditto_tracker),
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-connectivity",
-            new_deployment,
             |obj| self.reconcile_connectivity_deployment(&ditto, obj, ditto_tracker),
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-gateway",
-            new_deployment,
             |obj| self.reconcile_gateway_deployment(&ditto, obj, ditto_tracker),
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-policies",
-            new_deployment,
             |obj| self.reconcile_policies_deployment(&ditto, obj, ditto_tracker),
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-things",
-            new_deployment,
             |obj| self.reconcile_things_deployment(&ditto, obj, ditto_tracker),
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-things-search",
-            new_deployment,
             |obj| self.reconcile_things_search_deployment(&ditto, obj, ditto_tracker),
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.services,
             Some(&namespace),
             prefix.clone() + "-gateway",
-            new_service,
             |mut service| {
                 service.spec.use_or_create(|spec| {
                     // set labels
@@ -355,11 +280,10 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.services,
             Some(&namespace),
             prefix.clone() + "-nginx",
-            new_service,
             |mut service| {
                 service.spec.use_or_create(|spec| {
                     // set labels
@@ -386,11 +310,10 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.services,
             Some(&namespace),
             prefix.clone() + "-swaggerui",
-            new_service,
             |mut service| {
                 service.spec.use_or_create(|spec| {
                     // set labels
@@ -419,11 +342,10 @@ impl DittoController {
 
         let mut nginx_tracker = &mut ConfigTracker::new();
 
-        create_or_update_by(
+        create_or_update(
             &self.configmaps,
             Some(&namespace),
             prefix.clone() + "-swaggerui-api",
-            new_configmap,
             |mut cm| {
                 cm.append_string("ditto-api-v1.yaml", include_str!("data/ditto-api-v1.yaml"));
                 cm.append_string("ditto-api-v2.yaml", include_str!("data/ditto-api-v2.yaml"));
@@ -433,11 +355,10 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.configmaps,
             Some(&namespace),
             prefix.clone() + "-nginx-conf",
-            new_configmap,
             |mut cm| {
                 cm.append_string("nginx.conf", data::nginx_conf(ditto.name(), true));
                 cm.track_with(&mut nginx_tracker);
@@ -446,11 +367,10 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.configmaps,
             Some(&namespace),
             prefix.clone() + "-nginx-htpasswd",
-            new_configmap,
             |mut cm| {
                 cm.append_string("nginx.htpasswd", "ditto:A6BgmB8IEtPTs");
                 cm.track_with(&mut nginx_tracker);
@@ -459,11 +379,10 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.configmaps,
             Some(&namespace),
             prefix.clone() + "-nginx-cors",
-            new_configmap,
             |mut cm| {
                 cm.append_string("nginx-cors.conf", include_str!("data/nginx.cors"));
                 cm.track_with(&mut nginx_tracker);
@@ -472,11 +391,10 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.configmaps,
             Some(&namespace),
             prefix.clone() + "-nginx-data",
-            new_configmap,
             |mut cm| {
                 cm.append_string("index.html", include_str!("data/index.html"));
                 cm.append_string("ditto-up.svg", include_str!("data/ditto-up.svg"));
@@ -501,30 +419,27 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-swaggerui",
-            new_deployment,
             |obj| self.reconcile_swaggerui_deployment(&ditto, obj),
         )
         .await?;
 
-        create_or_update_by(
+        create_or_update(
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-nginx",
-            new_deployment,
             |obj| self.reconcile_nginx_deployment(&ditto, obj, &nginx_tracker),
         )
         .await?;
 
         if let Some(ref routes) = self.routes {
-            create_or_update_by(
+            create_or_update(
                 routes,
                 Some(&namespace),
                 prefix.clone() + "-console",
-                new_route,
                 |mut route| {
                     route.spec.tls.use_or_create(|tls| {
                         tls.termination = "Edge".into();
@@ -573,6 +488,10 @@ impl DittoController {
             self.image_name("ditto-concierge"),
             Some("concierge-uri"),
             config_tracker,
+            |labels| {
+                labels.insert(KUBERNETES_LABEL_COMPONENT.into(), "concierge".into());
+            },
+            |_| {},
         )
     }
 
@@ -588,6 +507,10 @@ impl DittoController {
             self.image_name("ditto-gateway"),
             None,
             config_tracker,
+            |labels| {
+                labels.insert(KUBERNETES_LABEL_COMPONENT.into(), "gateway".into());
+            },
+            |_| {},
         )?;
 
         deployment.apply_container("service", |container| {
@@ -629,6 +552,10 @@ impl DittoController {
             self.image_name("ditto-connectivity"),
             Some("connectivity-uri"),
             config_tracker,
+            |labels| {
+                labels.insert(KUBERNETES_LABEL_COMPONENT.into(), "connectivity".into());
+            },
+            |_| {},
         )
     }
 
@@ -644,6 +571,10 @@ impl DittoController {
             self.image_name("ditto-policies"),
             Some("policies-uri"),
             config_tracker,
+            |labels| {
+                labels.insert(KUBERNETES_LABEL_COMPONENT.into(), "policies".into());
+            },
+            |_| {},
         )
     }
 
@@ -659,6 +590,10 @@ impl DittoController {
             self.image_name("ditto-things"),
             Some("things-uri"),
             config_tracker,
+            |labels| {
+                labels.insert(KUBERNETES_LABEL_COMPONENT.into(), "things".into());
+            },
+            |_| {},
         )
     }
 
@@ -674,49 +609,56 @@ impl DittoController {
             self.image_name("ditto-things-search"),
             Some("searchDB-uri"),
             config_tracker,
+            |labels| {
+                labels.insert(KUBERNETES_LABEL_COMPONENT.into(), "search".into());
+            },
+            |_| {},
         )
     }
 
-    fn reconcile_default_deployment<S>(
+    fn reconcile_default_deployment<S, L, A>(
         &self,
         ditto: &Ditto,
         mut deployment: Deployment,
         image_name: S,
         uri_key: Option<&str>,
         config_tracker: &ConfigTracker,
+        add_labels: L,
+        add_annotations: A,
     ) -> Result<Deployment>
     where
         S: ToString,
+        L: FnOnce(&mut BTreeMap<String, String>),
+        A: FnOnce(&mut BTreeMap<String, String>),
     {
         let prefix = ditto.name();
 
-        let mut labels = BTreeMap::new();
+        self.create_defaults(&ditto, &mut deployment, add_labels, add_annotations);
 
-        labels.insert("app.kubernetes.io/name".into(), deployment.name());
-        labels.insert("app.kubernetes.io/instance".into(), ditto.name());
+        deployment.metadata_mut().owner_references = Some(vec![OwnerReference {
+            api_version: Ditto::API_VERSION.into(),
+            kind: Ditto::KIND.into(),
+            block_owner_deletion: Some(true),
+            controller: Some(true),
+            name: ditto.name(),
+            uid: ditto.meta().uid.as_ref().expect("UID missing").clone(),
+        }]);
 
-        if let Some(ref mut metadata) = deployment.metadata {
-            metadata.owner_references = Some(vec![OwnerReference {
-                api_version: Ditto::API_VERSION.into(),
-                kind: Ditto::KIND.into(),
-                block_owner_deletion: Some(true),
-                controller: Some(true),
-                name: ditto.name(),
-                uid: ditto.meta().uid.as_ref().expect("UID missing").clone(),
-            }]);
-        }
+        let labels = deployment.metadata.labels.as_mut().unwrap();
 
         if deployment.spec.is_none() {
             deployment.spec = Some(Default::default());
         }
 
         if let Some(ref mut spec) = deployment.spec {
-            spec.selector.match_labels = Some(labels.clone());
+            spec.selector.match_labels = Some(labels.clone().into());
             labels.insert("actorSystemName".into(), "ditto-cluster".into());
 
             spec.template.metadata.use_or_create(|metadata| {
                 metadata.labels.use_or_create(|meta_labels| {
-                    meta_labels.extend(labels);
+                    for (k, v) in labels {
+                        meta_labels.insert(k.clone(), v.clone().into());
+                    }
                 });
                 metadata.annotations.use_or_create(|annotations| {
                     annotations.insert(
@@ -731,34 +673,33 @@ impl DittoController {
             });
 
             spec.template.apply_container("service", |container| {
+                    container.image = Some(image_name.to_string());
 
-                container.image = Some(image_name.to_string());
+                    container.args(vec!["java", "-jar", "/opt/ditto/starter.jar"]);
+                    container.command = None;
 
-                container.args(vec!["java", "-jar", "/opt/ditto/starter.jar"]);
-                container.command = None;
+                    container.add_port("http", 8080, None)?;
+                    container.add_port("remoting", 2551, None)?;
+                    container.add_port("management", 8558, None)?;
 
-                container.add_port("http", 8080, None)?;
-                container.add_port("remoting", 2551, None)?;
-                container.add_port("management", 8558, None)?;
+                    container.add_env("POD_LABEL_SELECTOR", "app.kubernetes.io/name=%s")?;
+                    container.add_env("DISCOVERY_METHOD", "kubernetes-api")?;
+                    container.add_env("OPENJ9_JAVA_OPTIONS", "-XX:+ExitOnOutOfMemoryError -Xtune:virtualized -Xss512k -XX:MaxRAMPercentage=80 -XX:InitialRAMPercentage=40 -Dakka.coordinated-shutdown.exit-jvm=on -Dorg.mongodb.async.type=netty")?;
+                    container.add_env("MONGO_DB_SSL_ENABLED", "false")?;
+                    container.add_env_from_field_path("POD_NAMESPACE", "metadata.namespace")?;
+                    container.add_env_from_field_path("INSTANCE_INDEX", "metadata.name")?;
+                    container.add_env_from_field_path("HOSTNAME", "status.podIP")?;
 
-                container.add_env("POD_LABEL_SELECTOR", "app.kubernetes.io/name=%s")?;
-                container.add_env("DISCOVERY_METHOD", "kubernetes-api")?;
-                container.add_env("OPENJ9_JAVA_OPTIONS", "-XX:+ExitOnOutOfMemoryError -Xtune:virtualized -Xss512k -XX:MaxRAMPercentage=80 -XX:InitialRAMPercentage=40 -Dakka.coordinated-shutdown.exit-jvm=on -Dorg.mongodb.async.type=netty")?;
-                container.add_env("MONGO_DB_SSL_ENABLED", "false")?;
-                container.add_env_from_field_path("POD_NAMESPACE", "metadata.namespace")?;
-                container.add_env_from_field_path("INSTANCE_INDEX", "metadata.name")?;
-                container.add_env_from_field_path("HOSTNAME", "status.podIP")?;
+                    container.set_resources("memory", Some("1Gi"), Some("1Gi"));
 
-                container.set_resources("memory", Some("1Gi"), Some("1Gi"));
+                    if let Some(uri_key) = uri_key {
+                        container.add_env_from_secret("MONGO_DB_URI", prefix + "-mongodb-secret", uri_key)?;
+                    }
 
-                if let Some(uri_key)= uri_key {
-                    container.add_env_from_secret("MONGO_DB_URI", prefix + "-mongodb-secret", uri_key)?;
-                }
+                    self.add_probes(container)?;
 
-                self.add_probes(container)?;
-
-                Ok(())
-            })?;
+                    Ok(())
+                })?;
         }
 
         Ok(deployment)
@@ -772,26 +713,38 @@ impl DittoController {
     ) -> Result<Deployment> {
         let prefix = ditto.name();
 
-        let mut labels = BTreeMap::new();
+        let connects = vec!["gateway", "swaggerui"]
+            .iter()
+            .map(|n| format!("{}-{}", n, ditto.name()))
+            .collect::<Vec<String>>();
+        let connects = serde_json::to_string(&connects).unwrap_or("".into());
 
-        labels.insert("app.kubernetes.io/name".into(), deployment.name());
-        labels.insert("app.kubernetes.io/instance".into(), ditto.name());
+        self.create_defaults(
+            &ditto,
+            &mut deployment,
+            |labels| {
+                labels.insert(KUBERNETES_LABEL_COMPONENT.into(), "reverse-proxy".into());
+            },
+            |annotations| {
+                annotations.insert("app.openshift.io/connects-to".into(), connects);
+            },
+        );
 
-        if let Some(ref mut metadata) = deployment.metadata {
-            metadata.owner_references = Some(vec![OwnerReference {
-                api_version: Ditto::API_VERSION.into(),
-                kind: Ditto::KIND.into(),
-                block_owner_deletion: Some(true),
-                controller: Some(true),
-                name: ditto.name(),
-                uid: ditto.meta().uid.as_ref().expect("UID missing").clone(),
-            }]);
-        }
+        deployment.metadata_mut().owner_references = Some(vec![OwnerReference {
+            api_version: Ditto::API_VERSION.into(),
+            kind: Ditto::KIND.into(),
+            block_owner_deletion: Some(true),
+            controller: Some(true),
+            name: ditto.name(),
+            uid: ditto.meta().uid.as_ref().expect("UID missing").clone(),
+        }]);
+
+        let labels = deployment.metadata.labels.as_mut().unwrap();
 
         deployment.spec.use_or_create_err(|spec| {
-            spec.selector.match_labels = Some(labels.clone());
+            spec.selector.match_labels = Some(labels.clone().into());
             spec.template.metadata.use_or_create(|metadata| {
-                metadata.labels = Some(labels.clone());
+                metadata.labels = Some(labels.clone().into());
                 metadata.annotations.use_or_create(|annotations| {
                     annotations.insert("config-hash".into(), tracker.current_hash())
                 });
@@ -883,26 +836,30 @@ impl DittoController {
     ) -> Result<Deployment> {
         let prefix = ditto.name();
 
-        let mut labels = BTreeMap::new();
+        self.create_defaults(
+            &ditto,
+            &mut deployment,
+            |labels| {
+                labels.insert(KUBERNETES_LABEL_COMPONENT.into(), "frontend".into());
+            },
+            |_| {},
+        );
 
-        labels.insert("app.kubernetes.io/name".into(), deployment.name());
-        labels.insert("app.kubernetes.io/instance".into(), ditto.name());
+        deployment.metadata_mut().owner_references = Some(vec![OwnerReference {
+            api_version: Ditto::API_VERSION.into(),
+            kind: Ditto::KIND.into(),
+            block_owner_deletion: Some(true),
+            controller: Some(true),
+            name: ditto.name(),
+            uid: ditto.meta().uid.as_ref().expect("UID missing").clone(),
+        }]);
 
-        deployment.metadata.use_or_create(|metadata| {
-            metadata.owner_references = Some(vec![OwnerReference {
-                api_version: Ditto::API_VERSION.into(),
-                kind: Ditto::KIND.into(),
-                block_owner_deletion: Some(true),
-                controller: Some(true),
-                name: ditto.name(),
-                uid: ditto.meta().uid.as_ref().expect("UID missing").clone(),
-            }]);
-        });
+        let labels = deployment.metadata.labels.as_mut().unwrap();
 
         deployment.spec.use_or_create_err(|spec| {
-            spec.selector.match_labels = Some(labels.clone());
+            spec.selector.match_labels = Some(labels.clone().into());
             spec.template.metadata = Some(ObjectMeta {
-                labels: Some(labels.clone()),
+                labels: Some(labels.clone().into()),
                 ..Default::default()
             });
 
@@ -1028,5 +985,51 @@ impl DittoController {
             ..Default::default()
         });
         Ok(())
+    }
+
+    fn create_defaults<L, A>(
+        &self,
+        ditto: &Ditto,
+        deployment: &mut Deployment,
+        add_labels: L,
+        add_annotations: A,
+    ) where
+        L: FnOnce(&mut BTreeMap<String, String>),
+        A: FnOnce(&mut BTreeMap<String, String>),
+    {
+        let prefix = format!("{}-", ditto.name());
+        let name = deployment.name();
+        let name = if name.starts_with(&prefix) {
+            name[prefix.len()..].to_string().clone()
+        } else {
+            name.clone()
+        };
+        // add labels
+
+        let mut labels = BTreeMap::new();
+
+        labels.insert("app.kubernetes.io/name".into(), name.clone());
+        labels.insert(
+            "app.kubernetes.io/instance".into(),
+            format!("{}-{}", name, prefix),
+        );
+        labels.insert("app.kubernetes.io/part-of".into(), ditto.name());
+        labels.insert("app.kubernetes.io/version".into(), DITTO_VERSION.into());
+        labels.insert(
+            "app.kubernetes.io/managed-by".into(),
+            "ditto-operator".into(),
+        );
+
+        add_labels(&mut labels);
+        deployment.metadata.labels = Some(labels);
+
+        // add annotations
+
+        deployment
+            .metadata
+            .annotations
+            .use_or_create(|annotations| {
+                add_annotations(annotations);
+            });
     }
 }

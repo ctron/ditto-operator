@@ -265,11 +265,10 @@ dependencies = [
 
 [[package]]
 name = "dirs"
-version = "2.0.2"
+version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13aea89a5c93364a98e9b37b2fa237effbb694d5cfe01c5b70941f7eb087d5e3"
+checksum = "142995ed02755914747cc6ca76fc7e4583cd18578746716d0508ea6ed558b9ff"
 dependencies = [
- "cfg-if",
  "dirs-sys",
 ]
 
@@ -672,9 +671,9 @@ dependencies = [
 
 [[package]]
 name = "k8s-openapi"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eae6d236dfb2b60d27cdbcb3d20511713aff6d23f9bf2f3d6b594c232ea99e04"
+checksum = "57f95fd36c08ce592e67400a0f1a66f432196997d5a7e9a97e8743c33d8a9312"
 dependencies = [
  "base64 0.12.2",
  "bytes",
@@ -699,9 +698,9 @@ dependencies = [
 
 [[package]]
 name = "kube"
-version = "0.35.1"
+version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c0578635e15e33e500d784ce9bdb82b2a0cd18eda82fdc88108eba405b02709"
+checksum = "4aba6e152805ed8d84b66b06e593e8250b135e5f465dfa4961d8365351f91646"
 dependencies = [
  "Inflector",
  "base64 0.12.2",
@@ -720,6 +719,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "static_assertions",
  "thiserror",
  "time 0.2.16",
  "tokio",
@@ -728,9 +728,9 @@ dependencies = [
 
 [[package]]
 name = "kube-derive"
-version = "0.35.1"
+version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b090cd3118831d145636422c8a1e6c109928cb56833775c7f84382c9ea2240a8"
+checksum = "b9ee2ff16fb3e1fdbfc876812db3576f0dd06675c3fc9ff7e1775aa26ce5e3fa"
 dependencies = [
  "Inflector",
  "proc-macro2",
@@ -953,9 +953,9 @@ checksum = "0b631f7e854af39a1739f401cf34a8a013dfe09eac4fa4dba91e9768bd28168d"
 
 [[package]]
 name = "openshift-openapi"
-version = "0.0.2"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfd3701f459442dbb127d5752426c02671780622aab7b78c7c5943cdee3a5760"
+checksum = "2024428c29d3f3402a7ff4714e1d4d0740485f3e16d345df26eb1e2edfc9d1d7"
 dependencies = [
  "base64 0.12.2",
  "bytes",
@@ -1001,9 +1001,9 @@ dependencies = [
 
 [[package]]
 name = "operator-framework"
-version = "0.1.5"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa5ef3597432521b538d919788f3e6f2de52cc4e3ea45ee040cfa3d7eef5e8f3"
+checksum = "f197aca00d11bbe2beff4701fc5c34a635ba0b786ae0a4562f3da1b251774b6f"
 dependencies = [
  "anyhow",
  "k8s-openapi",
@@ -1018,9 +1018,9 @@ dependencies = [
 
 [[package]]
 name = "ordered-float"
-version = "1.0.2"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18869315e81473c951eb56ad5558bbc56978562d3ecfb87abb7a1e944cea4518"
+checksum = "9fe9037165d7023b1228bc4ae9a2fa1a2b0095eca6c2998c624723dfd01314a5"
 dependencies = [
  "num-traits",
 ]
@@ -1359,9 +1359,9 @@ dependencies = [
 
 [[package]]
 name = "serde-value"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a65a7291a8a568adcae4c10a677ebcedbc6c9cec91c054dee2ce40b0e3290eb"
+checksum = "f3a1a3341211875ef120e117ea7fd5228530ae7e7036a779fdc9117be6b3282c"
 dependencies = [
  "ordered-float",
  "serde",
@@ -1476,6 +1476,12 @@ checksum = "b0437cfb83762844799a60e1e3b489d5ceb6a650fbacb86437badc1b6d87b246"
 dependencies = [
  "version_check",
 ]
+
+[[package]]
+name = "static_assertions"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stdweb"

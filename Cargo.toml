@@ -3,13 +3,14 @@ name = "ditto-operator"
 version = "0.1.0"
 authors = ["Jens Reimann <jreimann@redhat.com>"]
 edition = "2018"
+license = "EPL-2.0"
 
 [dependencies]
 
-kube = "0.35.1"
-kube-derive = "0.35.1"
-k8s-openapi = { version = "0.8.0", default-features = false }
-openshift-openapi = { version = "0.0.2", default-features = false, features = ["v4_3"] }
+kube = "0.37"
+kube-derive = "0.37"
+k8s-openapi = { version = "0.9.0", default-features = false }
+openshift-openapi = { version = "0.1.0", default-features = false, features = ["v4_3"] }
 
 serde = "1.0"
 serde_derive = "1.0"
@@ -31,11 +32,12 @@ log = "0.4"
 env_logger = "0.7"
 rand = "0.7"
 sha1 = "0.6"
-operator-framework = { version = "0.1.5", features = [ "v1_16" ] }
+operator-framework = { version = "0.2.0", features = [ "v1_16" ] }
 
 string-error = "0.1.0"
 
 [patch.crates-io]
 #k8s-openapi = { git = "https://github.com/Arnavion/k8s-openapi.git#b8046d9a" }
-#kube-derive = { git = "https://github.com/ctron/kube-rs", branch="feature/meta_mut_1" }
+#kube = { git = "https://github.com/clux/kube-rs", branch="master" }
+#kube-derive = { git = "https://github.com/clux/kube-rs", branch="master" }
 #operator-framework = { path = "/home/jreimann/git/operator-framework" }
