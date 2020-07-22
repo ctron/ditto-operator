@@ -2,3 +2,5 @@ image:
   repository: docker.pkg.github.com/ctron/ditto-operator
   tag: ci
   pullPolicy: Always
+
+imagePullSecrets: [ "ci" ]
