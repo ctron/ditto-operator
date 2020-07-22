@@ -34,3 +34,7 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: metadata.namespace
+            - name: HAS_OPENSHIFT
+              value: "false"
+            - name: RUST_LOG
+              value: info
