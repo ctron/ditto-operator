@@ -1,7 +1,8 @@
 helm-extra-args: --timeout 600
-check-version-increment: true
+check-version-increment: false
 debug: true
 chart-dirs:
   - helm
 chart-repos:
   - bitnami=https://charts.bitnami.com/bitnami
+charts: [ "ditto-operator" ]
