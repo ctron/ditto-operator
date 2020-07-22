@@ -1,9 +1,8 @@
-
 replicaCount: 1
 
 image:
   repository: quay.io/ctron/ditto-operator
-  #tag:
+  # tag:
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
