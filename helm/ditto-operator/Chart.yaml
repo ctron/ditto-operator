@@ -13,3 +13,8 @@ version: 0.1.1
 appVersion: 0.1.1
 
 kubeVersion: ">= 1.14.0"
+
+maintainer:
+  - name: Jens Reimann
+    email: ctron@dentrassi.de
+    url: https://dentrassi.de
