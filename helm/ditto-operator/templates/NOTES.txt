@@ -1,3 +1,14 @@
+
+Be sure to create a new MongoDB instance before creating a new Ditto instance.
+
 Create a new Ditto instance:
 
-  kubectl apply -f -
+$ kubectl apply -f - << __EOF__
+apiVersion: iot.eclipse.org/v1alpha1
+kind: Ditto
+metadata:
+  name: test
+spec:
+  mongoDb:
+    host: mongodb
+__EOF__
