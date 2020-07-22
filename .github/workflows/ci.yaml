@@ -1,10 +1,6 @@
 name: ci
 
-on:
-  pull_request:
-    paths:
-      - 'charts/**'
-      - 'packages/**'
+on: [push, pull_request]
 
 jobs:
   lint-chart:
