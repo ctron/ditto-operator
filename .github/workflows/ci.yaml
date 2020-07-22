@@ -44,6 +44,8 @@ jobs:
           command: build
           args: --release
 
+      - run: ls target/release/
+
       - name: Build container
         run: |
           docker build . --file .github/Dockerfile \
