@@ -14,7 +14,7 @@ use anyhow::Result;
 
 use crate::crd::{Ditto, DittoStatus};
 use k8s_openapi::api::apps::v1::Deployment;
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::{ObjectMeta, OwnerReference};
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::OwnerReference;
 use k8s_openapi::{ByteString, Metadata, Resource};
 use kube::api::{Meta, PostParams};
 use kube::{Api, Client};
@@ -35,8 +35,8 @@ use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use crate::data;
 
 use k8s_openapi::api::core::v1::{
-    ConfigMap, ConfigMapVolumeSource, Container, EmptyDirVolumeSource, HTTPGetAction, PodSpec,
-    Probe, Secret, Service, ServiceAccount, ServicePort, Volume, VolumeMount,
+    ConfigMap, ConfigMapVolumeSource, Container, HTTPGetAction, PodSpec, Probe, Secret, Service,
+    ServiceAccount, ServicePort, Volume, VolumeMount,
 };
 use k8s_openapi::api::rbac::v1::{PolicyRule, Role, RoleBinding, Subject};
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
