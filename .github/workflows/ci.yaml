@@ -46,7 +46,7 @@ jobs:
 
       - name: Build container
         run: |
-          docker build . --file .github/workflows/Dockerfile \
+          docker build . --file .github/Dockerfile \
             --tag docker.pkg.github.com/${{ github.repository }}/ditto-operator:latest
 
       - name: Login to github container repository
