@@ -44,6 +44,18 @@ jobs:
           command: build
           args: --release
 
+      - name: Build container
+        run: |
+          docker build . --file .github/workflows/Dockerfile \
+            --tag quay.io/ctron/ditto-operator:${TAG} \
+            --tag docker.pkg.github.com/${{ github.repository }}/ditto-operator:latest
+
+      - name: Login to github container repository
+        run: docker login -u $${{ github.repository_owner }} -p ${{ secrets.GITHUB_TOKEN }} docker.pkg.github.com
+
+      - name: Push latest to github container repository
+        run: docker push docker.pkg.github.com/${{ github.repository }}/ditto-operator:latest
+
   install-chart:
     name: install-chart
     runs-on: ubuntu-18.04
