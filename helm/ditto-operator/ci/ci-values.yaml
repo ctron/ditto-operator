@@ -3,4 +3,4 @@ image:
   tag: ci
   pullPolicy: Always
 
-imagePullSecrets: [ "ci" ]
+imagePullSecrets: ["ci"]
