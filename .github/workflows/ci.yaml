@@ -44,6 +44,12 @@ jobs:
           command: build
           args: --release
 
+      - name: Store artifact
+        uses: actions/upload-artifact@v1
+        with:
+          name: binary
+          path: target/release/ditto-operator
+
       - run: ls target/release/
 
       - name: Build container
