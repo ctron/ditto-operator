@@ -3,6 +3,7 @@ replicaCount: 1
 
 image:
   repository: quay.io/ctron/ditto-operator
+  tag: {{ .Chart.AppVersion }}
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []

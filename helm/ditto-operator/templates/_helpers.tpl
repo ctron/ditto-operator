@@ -1,9 +1,14 @@
 {{/* vim: set filetype=mustache: */}}
+
 {{/*
 Expand the name of the chart.
 */}}
 {{- define "ditto-operator.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "ditto-operator.imageTag" -}}
+{{- default .Chart.AppVersion .Values.image.tag -}}
 {{- end -}}
 
 {{/*
