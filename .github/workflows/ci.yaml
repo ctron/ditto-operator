@@ -58,7 +58,7 @@ jobs:
             --tag docker.pkg.github.com/${{ github.repository }}/ditto-operator:latest
 
       - name: Login to github container repository
-        run: docker login -u $${{ github.repository_owner }} -p ${{ secrets.GITHUB_TOKEN }} docker.pkg.github.com
+        run: docker login -u ${{ github.repository_owner }} -p ${{ secrets.GITHUB_TOKEN }} docker.pkg.github.com
 
       - name: Push latest to github container repository
         run: docker push docker.pkg.github.com/${{ github.repository }}/ditto-operator:latest
