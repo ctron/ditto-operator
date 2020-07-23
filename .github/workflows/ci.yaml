@@ -99,6 +99,9 @@ jobs:
 #            --docker-username=${{ github.repository_owner }} \
 #            --docker-password=${{ secrets.GITHUB_TOKEN }}
 
+      - name: Login to github container repository
+        run: docker login -u ${{ github.repository_owner }} -p ${{ secrets.GITHUB_TOKEN }} docker.pkg.github.com
+
       - name: Create image pull secret
         run: |
           kubectl create secret generic ci \
