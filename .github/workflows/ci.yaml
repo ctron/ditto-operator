@@ -92,20 +92,18 @@ jobs:
           config: .github/kind-config.yaml
           node_image: kindest/node:${{ matrix.k8s }}
 
-      - name: Dry run pull secret
-        run: |
-          kubectl create secret docker-registry ci \
-            --docker-server=docker.pkg.github.com \
-            --docker-username=${{ github.repository_owner }} \
-            --docker-password=not-the-password \
-            -o yaml --dry-run
+#      - name: Create image pull secret
+#        run: |
+#          kubectl create secret docker-registry ci \
+#            --docker-server=docker.pkg.github.com \
+#            --docker-username=${{ github.repository_owner }} \
+#            --docker-password=${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create pull secret
+      - name: Create image pull secret
         run: |
-          kubectl create secret docker-registry ci \
-            --docker-server=docker.pkg.github.com \
-            --docker-username=${{ github.repository_owner }} \
-            --docker-password=${{ secrets.GITHUB_TOKEN }}
+          kubectl create secret generic ci \
+              --from-file=.dockerconfigjson=/home/runner/.docker/config.json \
+              --type=kubernetes.io/dockerconfigjson
 
       - name: Run chart-testing (install)
         uses: helm/chart-testing-action@v1.0.0-rc.2
