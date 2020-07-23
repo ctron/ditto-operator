@@ -92,9 +92,13 @@ jobs:
           config: .github/kind-config.yaml
           node_image: kindest/node:${{ matrix.k8s }}
 
+      - name: Pre-create namespace
+        run: kubectl create namespace ditto-operator-ci
+
 #      - name: Create image pull secret
 #        run: |
 #          kubectl create secret docker-registry ci \
+#            -n ditto-operator-ci \
 #            --docker-server=docker.pkg.github.com \
 #            --docker-username=${{ github.repository_owner }} \
 #            --docker-password=${{ secrets.GITHUB_TOKEN }}
@@ -105,6 +109,7 @@ jobs:
       - name: Create image pull secret
         run: |
           kubectl create secret generic ci \
+              -n ditto-operator-ci \
               --from-file=.dockerconfigjson=/home/runner/.docker/config.json \
               --type=kubernetes.io/dockerconfigjson
 
