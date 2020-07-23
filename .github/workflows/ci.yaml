@@ -98,7 +98,7 @@ jobs:
             --docker-server=docker.pkg.github.com \
             --docker-username=${{ github.repository_owner }} \
             --docker-password=not-the-password \
-            -o yaml --dry-run=client
+            -o yaml --dry-run
 
       - name: Create pull secret
         run: |
