@@ -10,6 +10,8 @@
 * Add bundle to `olm/ditto-operator-bundle/ditto-operator.package.yaml`
 * Copy `<version>` directory
   ** Update versions
+  ** Update the `replaces` field
+* (Optional) Update CRDs
 * Raise two PRs
   ** Replace `HAS_OPENSHIFT=true` in one of the PRs
 
