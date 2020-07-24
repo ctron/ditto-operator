@@ -13,5 +13,5 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 subjects:
   - kind: ServiceAccount
-    name: {{ template "ditto-operator.serviceAccountName" . }}
+    name: {{ include "ditto-operator.serviceAccountName" . }}
 {{- end -}}

@@ -1,0 +1,69 @@
+{{- if .Values.s2i.enabled -}}
+---
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  name: {{ include "ditto-operator.fullname" . }}-ubi8
+  labels:
+    app.kubernetes.io/name: {{ include "ditto-operator.name" . }}
+{{ include "ditto-operator.labels" . | indent 4 }}
+spec:
+  tags:
+    - from:
+        kind: DockerImage
+        name: registry.access.redhat.com/ubi8
+      name: latest
+      importPolicy:
+        scheduled: true
+---
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  name: {{ include "ditto-operator.fullname" . }}-ubi8-minimal
+  labels:
+    app.kubernetes.io/name: {{ include "ditto-operator.name" . }}
+{{ include "ditto-operator.labels" . | indent 4 }}
+spec:
+  tags:
+    - from:
+        kind: DockerImage
+        name: registry.access.redhat.com/ubi8-minimal
+      name: latest
+      importPolicy:
+        scheduled: true
+---
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  name: {{ include "ditto-operator.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "ditto-operator.name" . }}
+{{ include "ditto-operator.labels" . | indent 4 }}
+spec: {}
+---
+kind: BuildConfig
+apiVersion: build.openshift.io/v1
+metadata:
+  name: {{ include "ditto-operator.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "ditto-operator.name" . }}
+{{ include "ditto-operator.labels" . | indent 4 }}
+spec:
+  triggers:
+    - type: ImageChange
+  source:
+    type: git
+    git:
+      uri: {{ .Values.s2i.git.uri }}
+      ref: {{ .Values.s2i.git.ref }}
+  strategy:
+    type: docker
+    dockerStrategy:
+      from:
+        kind: ImageStreamTag
+        name: {{ include "ditto-operator.fullname" . }}-ubi8:latest
+  output:
+    to:
+      kind: ImageStreamTag
+      name: {{ include "ditto-operator.fullname" . }}:latest
+{{- end -}}

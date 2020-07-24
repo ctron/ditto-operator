@@ -5,6 +5,9 @@ image:
   # tag: # defaults to the app version
   pullPolicy: IfNotPresent
 
+openshift:
+  enabled: false
+
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
@@ -27,3 +30,9 @@ affinity: {}
 
 rbac:
   enabled: true
+
+s2i:
+  enabled: false
+  git:
+    uri: https://github.com/ctron/ditto-operator
+    ref: master

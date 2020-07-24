@@ -9,6 +9,18 @@ metadata:
 {{ include "ditto-operator.labels" . | indent 4 }}
 rules:
   - apiGroups: [""]
-    resources: ["pods", "deployments", "services", "configmaps", "secrets"]
+    resources: ["pods", "services", "services", "configmaps", "secrets", "serviceaccounts"]
+    verbs: ["create", "update", "delete", "get", "watch", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments" ]
+    verbs: ["create", "update", "delete", "get", "watch", "list"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["create", "update", "delete", "get", "watch", "list"]
+  - apiGroups: ["route.openshift.io"]
+    resources: ["routes"]
+    verbs: ["create", "update", "delete", "get", "watch", "list"]
+  - apiGroups: ["iot.eclipse.org"]
+    resources: ["dittos", "dittos/status", "dittos/finalizers"]
     verbs: ["create", "update", "delete", "get", "watch", "list"]
 {{- end -}}

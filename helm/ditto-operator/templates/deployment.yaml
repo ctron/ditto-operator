@@ -4,6 +4,19 @@ metadata:
   name: {{ include "ditto-operator.fullname" . }}
   labels:
     {{- include "ditto-operator.labels" . | nindent 4 }}
+  {{- if .Values.s2i.enabled }}
+  annotations:
+    image.openshift.io/triggers: |
+      [
+        {
+          "from": {
+            "kind":"ImageStreamTag",
+            "name":"{{ include "ditto-operator.fullname" . }}:latest"
+          },
+          "fieldPath":"spec.template.spec.containers[?(@.name==\"operator\")].image"
+        }
+      ]
+  {{- end }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
@@ -25,10 +38,24 @@ spec:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- if .Values.s2i.enabled }}
+          image: {{ include "ditto-operator.fullname" . }}
+          {{- else }}
           image: {{ .Values.image.repository }}:{{ include "ditto-operator.imageTag" . }}
+          {{- end }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+            - name: HAS_OPENSHIFT
+              value: {{ .Values.openshift.enabled | quote }}
+            - name: RUST_LOG
+              value: info
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
