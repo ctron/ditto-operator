@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: quay.io/ctron/ditto-operator
+  repository: docker.io/ctron/ditto-operator
   # tag: # defaults to the app version
   pullPolicy: IfNotPresent
 
