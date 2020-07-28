@@ -3,6 +3,7 @@ name: ditto-operator
 description: A Helm chart deploying the Ditto operator
 home: https://github.com/ctron/ditto-operator
 type: application
+icon: https://www.eclipse.org/ditto/images/ditto.svg
 
 # This is the chart version. This version number should be incremented each time you make changes
 # to the chart and its templates, including the app version.
