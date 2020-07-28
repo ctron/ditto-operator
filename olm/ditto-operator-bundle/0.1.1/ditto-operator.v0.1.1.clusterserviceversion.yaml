@@ -42,10 +42,11 @@ spec:
     [Eclipse Ditto](https://eclipse.org/ditto) is a "digital twin" platform.
 
     ### Pre-requisites
-    * An instance of MongoDB
+    * A MongoDB instance
 
     ### Supported Features
-    * **Installation** Deploy an instance of Eclipse Ditto.
+    * **Installation**: Deploy an instance of Eclipse Ditto.
+    * **Upgrade**: Upgrade to a newer version of Eclips Ditto.
 
     ### Contributing
     You can contribute by:
