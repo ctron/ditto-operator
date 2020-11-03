@@ -19,7 +19,7 @@ You need to provide a MongoDB instance. You can easily deploy one with
 the following Helm chart:
 
     helm repo add bitnami https://charts.bitnami.com/bitnami
-    helm install mongodb bitnami/mongodb --set securityContext.enabled=false --set mongodbRootPassword=admin123456 --set usePassword=false
+    helm install mongodb bitnami/mongodb --set podSecurityContext.enabled=false --set containerSecurityContext.enabled=false --set auth.rootPassword=admin123456 --set auth.enabled=false
 
 ## Create Ditto instance
 
