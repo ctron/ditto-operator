@@ -29,6 +29,9 @@ pub struct DittoSpec {
     pub mongo_db: MongoDb,
     pub enable_dummy_auth: bool,
     pub devops_secure_status: bool,
+    /// set the "false" to prevent creating the default "ditto" user.
+    pub create_default_user: Option<bool>,
+    /// allow to override the Ditto image version.
     pub version: Option<String>,
 }
 
