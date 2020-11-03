@@ -411,7 +411,7 @@ impl DittoController {
             prefix.clone() + "-nginx-htpasswd",
             |mut cm| {
                 if ditto.spec.create_default_user.unwrap_or(true) {
-                    cm.append_string("nginx.htpasswd", "ditto:A6BgmB8IEtPTs");
+                    cm.init_string("nginx.htpasswd", "ditto:A6BgmB8IEtPTs");
                 }
                 cm.track_with(&mut nginx_tracker);
                 Ok(cm)

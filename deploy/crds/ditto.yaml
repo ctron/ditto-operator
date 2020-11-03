@@ -17,3 +17,23 @@ spec:
 
   subresources:
     status: {}
+
+  validation:
+    openAPIV3Schema:
+      type: object
+      properties:
+        spec:
+          type: object
+          properties:
+            enableDummyAuth:
+              type: boolean
+              description: Enable the "dummy authentication" mode.
+            createDefaultUser:
+              type: boolean
+              description: Create the default "ditto" user when initially deploying.
+            devopsSecureStatus:
+              type: boolean
+              description: Secure the devops status information.
+            version:
+              type: string
+              description: Override the image version of the Ditto images.
