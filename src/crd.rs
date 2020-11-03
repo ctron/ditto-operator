@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
     version = "v1alpha1",
     kind = "Ditto",
     namespaced,
+    derive = "Default",
     derive = "PartialEq",
     status = "DittoStatus"
 )]
@@ -28,6 +29,7 @@ pub struct DittoSpec {
     pub mongo_db: MongoDb,
     pub enable_dummy_auth: bool,
     pub devops_secure_status: bool,
+    pub version: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

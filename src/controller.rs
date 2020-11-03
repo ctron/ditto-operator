@@ -63,7 +63,7 @@ pub struct DittoController {
 }
 
 pub const DITTO_REGISTRY: &str = "docker.io/eclipse";
-pub const DITTO_VERSION: &str = "1.1.3";
+pub const DITTO_VERSION: &str = "1.4.0";
 pub const KUBERNETES_LABEL_COMPONENT: &str = "app.kubernetes.io/component";
 pub const OPENSHIFT_ANNOTATION_CONNECT: &str = "app.openshift.io/connects-to";
 
@@ -79,18 +79,27 @@ impl DittoController {
             services: Api::namespaced(client.clone(), &namespace),
             configmaps: Api::namespaced(client.clone(), &namespace),
             routes: if has_openshift {
-                Some(Api::namespaced(client.clone(), &namespace))
+                Some(Api::namespaced(client, &namespace))
             } else {
                 None
             },
         }
     }
 
-    fn image_name<S>(&self, base: S) -> String
+    fn image_name<S>(&self, base: S, ditto: &Ditto) -> String
     where
         S: ToString + Display,
     {
-        format!("{}/{}:{}", DITTO_REGISTRY, base, DITTO_VERSION)
+        format!("{}/{}:{}", DITTO_REGISTRY, base, self.image_version(ditto))
+    }
+
+    fn image_version(&self, ditto: &Ditto) -> String {
+        ditto
+            .spec
+            .version
+            .as_deref()
+            .unwrap_or(DITTO_VERSION)
+            .to_string()
     }
 
     pub async fn reconcile(&self, ditto: &Ditto) -> Result<()> {
@@ -102,7 +111,7 @@ impl DittoController {
 
         log::info!("Reconcile: {}/{}", namespace, ditto.name());
 
-        let service_account_name = format!("{}", prefix);
+        let service_account_name = prefix.to_string();
 
         let ditto_tracker = &mut ConfigTracker::new();
 
@@ -135,7 +144,7 @@ impl DittoController {
             Some(&namespace),
             prefix.clone() + "-mongodb-secret",
             |mut secret| {
-                for n in vec![
+                for n in &[
                     "concierge",
                     "connectivity",
                     "things",
@@ -169,7 +178,7 @@ impl DittoController {
             &self.service_accounts,
             Some(&namespace),
             &service_account_name,
-            |service_account| Ok(service_account),
+            Ok,
         )
         .await?;
 
@@ -187,7 +196,7 @@ impl DittoController {
         create_or_update(
             &self.role_bindings,
             Some(&namespace),
-            format!("{}", prefix),
+            prefix.to_string(),
             |mut role_binding| {
                 role_binding.role_ref.kind = Role::KIND.to_string();
                 role_binding.role_ref.api_group = Role::GROUP.to_string();
@@ -475,7 +484,7 @@ impl DittoController {
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-concierge"),
+            self.image_name("ditto-concierge", &ditto),
             Some("concierge-uri"),
             config_tracker,
             |_| {},
@@ -492,7 +501,7 @@ impl DittoController {
         let mut deployment = self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-gateway"),
+            self.image_name("ditto-gateway", &ditto),
             None,
             config_tracker,
             |_| {},
@@ -535,7 +544,7 @@ impl DittoController {
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-connectivity"),
+            self.image_name("ditto-connectivity", &ditto),
             Some("connectivity-uri"),
             config_tracker,
             |_| {},
@@ -552,7 +561,7 @@ impl DittoController {
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-policies"),
+            self.image_name("ditto-policies", &ditto),
             Some("policies-uri"),
             config_tracker,
             |_| {},
@@ -569,7 +578,7 @@ impl DittoController {
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-things"),
+            self.image_name("ditto-things", &ditto),
             Some("things-uri"),
             config_tracker,
             |_| {},
@@ -586,7 +595,7 @@ impl DittoController {
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-things-search"),
+            self.image_name("ditto-things-search", &ditto),
             Some("searchDB-uri"),
             config_tracker,
             |_| {},
@@ -692,7 +701,7 @@ impl DittoController {
             .map(|n| format!("{}-{}", n, ditto.name()))
             .collect::<Vec<String>>();
 
-        serde_json::to_string(&connects).unwrap_or("".into())
+        serde_json::to_string(&connects).unwrap_or_else(|_| "".into())
     }
 
     fn reconcile_nginx_deployment(
@@ -737,7 +746,7 @@ impl DittoController {
             spec.template.spec.use_or_create_err(|template_spec| {
                 let mut volumes = vec![];
 
-                for n in vec![
+                for n in &[
                     ("conf", "nginx-conf"),
                     ("htpasswd", "nginx-htpasswd"),
                     ("cors", "nginx-cors"),
@@ -759,7 +768,7 @@ impl DittoController {
                     }),
                     ..Default::default()
                 });
-                for n in vec!["cache", "run"] {
+                for n in &["cache", "run"] {
                     volumes.push(Volume {
                         name: format!("nginx-{}", n),
                         empty_dir: Some(Default::default()),
@@ -771,7 +780,7 @@ impl DittoController {
             })?;
 
             spec.template.apply_container("nginx", |container| {
-                container.image = Some("docker.io/nginx:1.17.5-alpine".into());
+                container.image = Some("docker.io/nginx:mainline-alpine".into());
 
                 container.args = None;
                 container.command = None;
@@ -804,7 +813,7 @@ impl DittoController {
                 });
 
                 let mut volume_mounts = vec![];
-                for n in vec![
+                for n in &[
                     ("conf", "/etc/nginx/nginx.conf", Some("nginx.conf")),
                     (
                         "htpasswd",
@@ -887,7 +896,7 @@ impl DittoController {
                         );
 
                         let mut mounts = Vec::new();
-                        for m in vec![
+                        for m in &[
                             ("swagger-ui-config", "/init-config"),
                             ("swagger-ui-content", "/init-content"),
                             ("swagger-ui-work", "/var/lib/nginx"),
@@ -910,7 +919,7 @@ impl DittoController {
                         container.add_port("http", 8080, None)?;
 
                         let mut mounts = Vec::new();
-                        for m in vec![
+                        for m in &[
                             ("swagger-ui-api", "/usr/share/nginx/html/openapi"),
                             ("swagger-ui-cache", "/var/cache/nginx"),
                             ("swagger-ui-work", "/var/lib/nginx"),
@@ -930,7 +939,7 @@ impl DittoController {
                     })?;
 
                 let mut volumes = vec![];
-                for m in vec![
+                for m in &[
                     "swagger-ui-cache",
                     "swagger-ui-work",
                     "swagger-ui-config",
@@ -938,7 +947,7 @@ impl DittoController {
                     "swagger-ui-run",
                 ] {
                     volumes.push(Volume {
-                        name: m.into(),
+                        name: m.to_string(),
                         empty_dir: Some(Default::default()),
                         ..Default::default()
                     });
@@ -1003,9 +1012,9 @@ impl DittoController {
         let prefix = format!("{}-", ditto.name());
         let name = deployment.name();
         let name = if name.starts_with(&prefix) {
-            name[prefix.len()..].to_string().clone()
+            name[prefix.len()..].to_string()
         } else {
-            name.clone()
+            name
         };
 
         // add labels
