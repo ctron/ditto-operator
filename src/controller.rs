@@ -261,11 +261,7 @@ impl DittoController {
                     // set labels
 
                     let mut labels = BTreeMap::new();
-                    labels.insert(
-                        "app.kubernetes.io/name".into(),
-                        format!("{}-gateway", ditto.name()),
-                    );
-                    labels.insert("app.kubernetes.io/instance".into(), ditto.name());
+                    labels.extend(self.service_selector("gateway", &ditto));
                     spec.selector = Some(labels);
 
                     // set ports
@@ -291,11 +287,7 @@ impl DittoController {
                     // set labels
 
                     let mut labels = BTreeMap::new();
-                    labels.insert("app.kubernetes.io/name".into(), "nginx".into());
-                    labels.insert(
-                        "app.kubernetes.io/instance".into(),
-                        format!("nginx-{}", ditto.name()),
-                    );
+                    labels.extend(self.service_selector("nginx", &ditto));
                     spec.selector = Some(labels);
 
                     // set ports
@@ -321,11 +313,7 @@ impl DittoController {
                     // set labels
 
                     let mut labels = BTreeMap::new();
-                    labels.insert(
-                        "app.kubernetes.io/name".into(),
-                        format!("{}-swaggerui", ditto.name()),
-                    );
-                    labels.insert("app.kubernetes.io/instance".into(), ditto.name());
+                    labels.extend(self.service_selector("swaggerui", &ditto));
                     spec.selector = Some(labels);
 
                     // set ports
@@ -1075,5 +1063,15 @@ impl DittoController {
             .use_or_create(|annotations| {
                 add_annotations(annotations);
             });
+    }
+
+    fn service_selector(&self, component: &str, ditto: &Ditto) -> Vec<(String, String)> {
+        vec![
+            ("app.kubernetes.io/name".into(), component.to_string()),
+            (
+                "app.kubernetes.io/instance".into(),
+                format!("{}-{}", component, ditto.name()),
+            ),
+        ]
     }
 }
