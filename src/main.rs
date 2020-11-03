@@ -1,3 +1,6 @@
+// required for kube-runtime
+#![type_length_limit = "20000000"]
+
 /**
  * Copyright (c) 2020 Red Hat Inc.
  *
@@ -14,31 +17,27 @@ mod controller;
 mod crd;
 mod data;
 
-use kube::api::ListParams;
-use kube::runtime::{Informer, Reflector};
-use kube::{Api, Client};
-
-use crd::Ditto;
-
 use crate::controller::DittoController;
-use async_std::sync::{Arc, Mutex};
+use crate::crd::Ditto;
 
-use std::fmt;
+use futures::{StreamExt, TryFutureExt};
+use snafu::Snafu;
+use std::{error::Error, fmt, time::Duration};
 
-async fn run_once(controller: &Arc<Mutex<DittoController>>, crds: Vec<Ditto>) {
-    for crd in crds {
-        let r = controller.lock().await.reconcile(&crd).await;
+use kube::{api::ListParams, Api, Client};
+use kube_runtime::controller::{Context, Controller, ReconcilerAction};
 
-        match r {
-            Err(e) => {
-                log::warn!("Failed to reconcile: {}", e);
-            }
-            _ => {}
-        }
-    }
+use k8s_openapi::api::{
+    apps::v1::Deployment,
+    core::v1::{ConfigMap, Secret, Service, ServiceAccount},
+    rbac::v1::{Role, RoleBinding},
+};
+use openshift_openapi::api::route::v1::Route;
+
+#[derive(Debug, Snafu)]
+enum ReconcileError {
+    ControllerError { source: anyhow::Error },
 }
-
-use std::error::Error;
 
 #[derive(Debug, Clone)]
 struct StringError {
@@ -53,47 +52,94 @@ impl fmt::Display for StringError {
     }
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    env_logger::init();
-
-    let client = Client::try_default().await?;
-    let namespace = std::env::var("NAMESPACE").unwrap_or("default".into());
-
-    let dittos: Api<Ditto> = Api::namespaced(client.clone(), &namespace);
-    let lp = ListParams::default().timeout(20); // low timeout in this example
-    let rf = Reflector::new(dittos).params(lp);
-
-    let inf: Informer<Ditto> = Informer::new(Api::namespaced(client.clone(), &namespace));
-
-    let rf2 = rf.clone(); // read from a clone in a task
-
-    let has_openshift = std::env::var_os("HAS_OPENSHIFT")
+fn has_flag<S>(name: S, default_value: bool) -> anyhow::Result<bool>
+where
+    S: AsRef<str>,
+{
+    Ok(std::env::var_os(name.as_ref())
         .map(|s| s.into_string())
         .transpose()
         .map_err(|err| StringError {
             message: err.to_string_lossy().into(),
         })?
-        .map_or(false, |s| s == "true");
+        .map_or(default_value, |s| s == "true"))
+}
 
-    let controller = Arc::new(Mutex::new(DittoController::new(
-        &namespace,
-        client,
-        has_openshift,
-    )));
-    let loop_controller = controller.clone();
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    env_logger::init();
+
+    let client = Client::try_default().await?;
+    let namespace = std::env::var("NAMESPACE").unwrap_or_else(|_| "default".into());
+    let has_openshift = has_flag("HAS_OPENSHIFT", false)?;
+
+    let controller = DittoController::new(&namespace, client.clone(), has_openshift);
+    let context = Context::new(());
 
     log::info!("Starting operator...");
 
-    tokio::spawn(async move {
-        tokio::time::delay_for(std::time::Duration::from_secs(1)).await;
-        loop {
-            run_once(&loop_controller, rf2.state().await.unwrap()).await;
-            tokio::time::delay_for(std::time::Duration::from_secs(10)).await;
-        }
-    });
+    let dittos: Api<Ditto> = Api::namespaced(client.clone(), &namespace);
+    let mut c = Controller::new(dittos, ListParams::default())
+        .owns(
+            Api::<ConfigMap>::namespaced(client.clone(), &namespace),
+            Default::default(),
+        )
+        .owns(
+            Api::<Deployment>::namespaced(client.clone(), &namespace),
+            Default::default(),
+        )
+        .owns(
+            Api::<Role>::namespaced(client.clone(), &namespace),
+            Default::default(),
+        )
+        .owns(
+            Api::<RoleBinding>::namespaced(client.clone(), &namespace),
+            Default::default(),
+        )
+        .owns(
+            Api::<Secret>::namespaced(client.clone(), &namespace),
+            Default::default(),
+        )
+        .owns(
+            Api::<Service>::namespaced(client.clone(), &namespace),
+            Default::default(),
+        )
+        .owns(
+            Api::<ServiceAccount>::namespaced(client.clone(), &namespace),
+            Default::default(),
+        );
 
-    rf.run().await?;
+    if has_openshift {
+        c = c.owns(
+            Api::<Route>::namespaced(client.clone(), &namespace),
+            Default::default(),
+        )
+    }
+
+    // now run it
+
+    c.run(
+        |resource, _| {
+            controller
+                .reconcile(resource)
+                .map_ok(|_| ReconcilerAction {
+                    requeue_after: None,
+                })
+                .map_err(|err| ReconcileError::ControllerError { source: err })
+        },
+        |_, _| ReconcilerAction {
+            requeue_after: Some(Duration::from_secs(60)),
+        },
+        context,
+    )
+    // the next two lines are required to poll from the stream
+    .for_each(|res| async move {
+        match res {
+            Ok(o) => log::debug!("reconciled {:?}", o),
+            Err(e) => log::info!("reconcile failed: {:?}", e),
+        }
+    })
+    .await;
 
     Ok(())
 }

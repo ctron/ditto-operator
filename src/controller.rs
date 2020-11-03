@@ -102,7 +102,7 @@ impl DittoController {
             .to_string()
     }
 
-    pub async fn reconcile(&self, ditto: &Ditto) -> Result<()> {
+    pub async fn reconcile(&self, ditto: Ditto) -> Result<()> {
         let original_ditto = ditto;
         let mut ditto = original_ditto.clone();
 
@@ -258,6 +258,45 @@ impl DittoController {
             Some(&namespace),
             prefix.clone() + "-things-search",
             |obj| self.reconcile_things_search_deployment(&ditto, obj, ditto_tracker),
+        )
+        .await?;
+
+        create_or_update(
+            &self.services,
+            Some(&namespace),
+            prefix.clone() + "-akka",
+            |mut service| {
+                service.spec.use_or_create(|spec| {
+                    // set labels
+
+                    let cluster_marker = format!("{}-cluster", ditto.name());
+
+                    let mut labels = BTreeMap::new();
+                    labels.insert("akka.cluster".into(), cluster_marker);
+
+                    spec.selector = Some(labels);
+                    spec.cluster_ip = Some("None".into());
+                    spec.publish_not_ready_addresses = Some(true);
+
+                    // set ports
+                    spec.ports = Some(vec![
+                        ServicePort {
+                            port: 2551,
+                            name: Some("remoting".into()),
+                            target_port: Some(IntOrString::String("remoting".into())),
+                            ..Default::default()
+                        },
+                        ServicePort {
+                            port: 8558,
+                            name: Some("management".into()),
+                            target_port: Some(IntOrString::String("management".into())),
+                            ..Default::default()
+                        },
+                    ]);
+                });
+
+                Ok(service)
+            },
         )
         .await?;
 
@@ -620,15 +659,17 @@ impl DittoController {
     {
         let prefix = ditto.name();
 
+        let cluster_marker = format!("{}-cluster", ditto.name());
+
         self.create_defaults(
             &ditto,
             &mut deployment,
             |labels| {
                 add_labels(labels);
-                labels.insert("actorSystemName".into(), "ditto-cluster".into());
+                labels.insert("akka.cluster".into(), cluster_marker);
                 labels.insert(KUBERNETES_LABEL_COMPONENT.into(), "backend".into());
             },
-            vec!["actorSystemName".into()],
+            vec![],
             |annotations| {
                 add_annotations(annotations);
                 annotations.remove(OPENSHIFT_ANNOTATION_CONNECT.into());
@@ -672,8 +713,10 @@ impl DittoController {
                     container.add_port("remoting", 2551, None)?;
                     container.add_port("management", 8558, None)?;
 
-                    container.add_env("POD_LABEL_SELECTOR", "app.kubernetes.io/name=%s")?;
-                    container.add_env("DISCOVERY_METHOD", "kubernetes-api")?;
+                    container.add_env("DISCOVERY_METHOD", "akka-dns")?;
+                    container.add_env("CLUSTER_BS_SERVICE_NAME", format!("{}-akka", ditto.name()))?;
+                    container.add_env("CLUSTER_BS_SERVICE_NAMESPACE", ditto.namespace().unwrap_or_default())?;
+
                     container.add_env("OPENJ9_JAVA_OPTIONS", "-XX:+ExitOnOutOfMemoryError -Xtune:virtualized -Xss512k -XX:MaxRAMPercentage=80 -XX:InitialRAMPercentage=40 -Dakka.coordinated-shutdown.exit-jvm=on -Dorg.mongodb.async.type=netty")?;
                     container.add_env("MONGO_DB_SSL_ENABLED", "false")?;
                     container.add_env_from_field_path("POD_NAMESPACE", "metadata.namespace")?;

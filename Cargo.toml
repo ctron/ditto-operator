@@ -9,6 +9,9 @@ license = "EPL-2.0"
 
 kube = "0.42"
 kube-derive = "0.42"
+kube-runtime = "0.42"
+snafu = "0.6"
+
 k8s-openapi = { version = "0.9", default-features = false }
 openshift-openapi = { version = "0.1", default-features = false, features = ["v4_3"] }
 
