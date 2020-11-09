@@ -10,12 +10,11 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 use crate::crd::{Ditto, DittoStatus};
 use k8s_openapi::api::apps::v1::Deployment;
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::OwnerReference;
-use k8s_openapi::{ByteString, Metadata, Resource};
+use k8s_openapi::{ByteString, Resource};
 use kube::api::{Meta, PostParams};
 use kube::{Api, Client};
 
@@ -104,9 +103,47 @@ impl DittoController {
     }
 
     pub async fn reconcile(&self, ditto: Ditto) -> Result<()> {
-        let original_ditto = ditto;
-        let mut ditto = original_ditto.clone();
+        let namespace = ditto
+            .namespace()
+            .as_ref()
+            .ok_or_else(|| anyhow!("Missing namespace"))?
+            .clone();
+        let original_ditto = ditto.clone();
 
+        let result = self.do_reconcile(ditto).await;
+
+        let (ditto, result) = match result {
+            Ok(mut ditto) => {
+                ditto.status = Some(DittoStatus {
+                    phase: "Active".into(),
+                    ..Default::default()
+                });
+                (ditto, Ok(()))
+            }
+            Err(err) => {
+                let mut ditto = original_ditto.clone();
+                ditto.status = Some(DittoStatus {
+                    phase: "Failed".into(),
+                    message: Some(err.to_string()),
+                });
+                (ditto, Err(err))
+            }
+        };
+
+        if !original_ditto.eq(&ditto) {
+            Api::<Ditto>::namespaced(self.client.clone(), &namespace)
+                .replace_status(
+                    &ditto.name(),
+                    &PostParams::default(),
+                    serde_json::to_vec(&ditto)?,
+                )
+                .await?;
+        }
+
+        result
+    }
+
+    async fn do_reconcile(&self, ditto: Ditto) -> Result<Ditto> {
         let prefix = ditto.name();
         let namespace = ditto.namespace().expect("Missing namespace");
 
@@ -517,22 +554,7 @@ impl DittoController {
             .await?;
         }
 
-        ditto.status = Some(DittoStatus {
-            phase: "Active".into(),
-            ..Default::default()
-        });
-
-        if !original_ditto.eq(&ditto) {
-            Api::<Ditto>::namespaced(self.client.clone(), &namespace)
-                .replace_status(
-                    &ditto.name(),
-                    &PostParams::default(),
-                    serde_json::to_vec(&ditto)?,
-                )
-                .await?;
-        }
-
-        Ok(())
+        Ok(ditto)
     }
 
     fn reconcile_concierge_deployment(
@@ -693,7 +715,7 @@ impl DittoController {
             vec![],
             |annotations| {
                 add_annotations(annotations);
-                annotations.remove(OPENSHIFT_ANNOTATION_CONNECT.into());
+                annotations.remove(OPENSHIFT_ANNOTATION_CONNECT);
             },
         );
 
@@ -804,7 +826,7 @@ impl DittoController {
                     volumes.push(Volume {
                         name: format!("nginx-{}", n.0),
                         config_map: Some(ConfigMapVolumeSource {
-                            name: Some(prefix.clone() + "-" + n.1.into()),
+                            name: Some(prefix.clone() + "-" + n.1),
                             ..Default::default()
                         }),
                         ..Default::default()
