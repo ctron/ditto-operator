@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "properties": {
+    "replicaCount": {
+      "type": "integer"
+    },
+    "image": {
+      "type": [
+        "null",
+        "object"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": [
+            "Never",
+            "Always",
+            "IfNotPresent"
+          ]
+        }
+      }
+    },
+    "openshift": {
+      "type": [
+        "null",
+        "object"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "rbac": {
+      "type": [
+        "null",
+        "object"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "s2i": {
+      "type": [
+        "null",
+        "object"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "git": {
+          "type": "object",
+          "properties": {
+            "git": {
+              "type": "string",
+              "description": "The git repository to build from."
+            },
+            "ref": {
+              "type": "string",
+              "description": "The git ref (commit, branch, tag) to build from."
+            }
+          }
+        }
+      }
+    }
+  }
+}
