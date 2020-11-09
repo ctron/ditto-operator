@@ -47,6 +47,7 @@ use operator_framework::process::create_or_update;
 use operator_framework::tracker::{ConfigTracker, Trackable};
 use operator_framework::utils::UseOrCreate;
 
+use operator_framework::install::meta::OwnedBy;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 
@@ -120,6 +121,7 @@ impl DittoController {
             Some(&namespace),
             prefix.clone() + "-gateway-secret",
             |mut secret| {
+                secret.owned_by_controller(&ditto)?;
                 secret.data.use_or_create(|data| {
                     data.entry("devops-password".into()).or_insert_with(|| {
                         let pwd: String =
@@ -151,6 +153,7 @@ impl DittoController {
                     "searchDB",
                     "policies",
                 ] {
+                    secret.owned_by_controller(&ditto)?;
                     let credentials =
                         match (&ditto.spec.mongo_db.username, &ditto.spec.mongo_db.password) {
                             (Some(username), Some(password)) => {
@@ -178,11 +181,15 @@ impl DittoController {
             &self.service_accounts,
             Some(&namespace),
             &service_account_name,
-            Ok,
+            |mut service_account| {
+                service_account.owned_by_controller(&ditto)?;
+                Ok(service_account)
+            },
         )
         .await?;
 
         create_or_update(&self.roles, Some(&namespace), &prefix, |mut role| {
+            role.owned_by_controller(&ditto)?;
             role.rules = Some(vec![PolicyRule {
                 api_groups: Some(vec!["".into()]),
                 resources: Some(vec!["pods".into()]),
@@ -198,6 +205,8 @@ impl DittoController {
             Some(&namespace),
             prefix.to_string(),
             |mut role_binding| {
+                role_binding.owned_by_controller(&ditto)?;
+
                 role_binding.role_ref.kind = Role::KIND.to_string();
                 role_binding.role_ref.api_group = Role::GROUP.to_string();
                 role_binding.role_ref.name = prefix.clone();
@@ -266,6 +275,7 @@ impl DittoController {
             Some(&namespace),
             prefix.clone() + "-akka",
             |mut service| {
+                service.owned_by_controller(&ditto)?;
                 service.spec.use_or_create(|spec| {
                     // set labels
 
@@ -305,6 +315,7 @@ impl DittoController {
             Some(&namespace),
             prefix.clone() + "-gateway",
             |mut service| {
+                service.owned_by_controller(&ditto)?;
                 service.spec.use_or_create(|spec| {
                     // set labels
 
@@ -331,6 +342,7 @@ impl DittoController {
             Some(&namespace),
             prefix.clone() + "-nginx",
             |mut service| {
+                service.owned_by_controller(&ditto)?;
                 service.spec.use_or_create(|spec| {
                     // set labels
 
@@ -357,6 +369,7 @@ impl DittoController {
             Some(&namespace),
             prefix.clone() + "-swaggerui",
             |mut service| {
+                service.owned_by_controller(&ditto)?;
                 service.spec.use_or_create(|spec| {
                     // set labels
 
@@ -385,6 +398,7 @@ impl DittoController {
             Some(&namespace),
             prefix.clone() + "-swaggerui-api",
             |mut cm| {
+                cm.owned_by_controller(&ditto)?;
                 cm.append_string("ditto-api-v1.yaml", include_str!("data/ditto-api-v1.yaml"));
                 cm.append_string("ditto-api-v2.yaml", include_str!("data/ditto-api-v2.yaml"));
                 cm.track_with(&mut nginx_tracker);
@@ -398,6 +412,7 @@ impl DittoController {
             Some(&namespace),
             prefix.clone() + "-nginx-conf",
             |mut cm| {
+                cm.owned_by_controller(&ditto)?;
                 cm.append_string("nginx.conf", data::nginx_conf(ditto.name(), true));
                 cm.track_with(&mut nginx_tracker);
                 Ok(cm)
@@ -410,6 +425,7 @@ impl DittoController {
             Some(&namespace),
             prefix.clone() + "-nginx-htpasswd",
             |mut cm| {
+                cm.owned_by_controller(&ditto)?;
                 if ditto.spec.create_default_user.unwrap_or(true) {
                     cm.init_string("nginx.htpasswd", "ditto:A6BgmB8IEtPTs");
                 }
@@ -424,6 +440,7 @@ impl DittoController {
             Some(&namespace),
             prefix.clone() + "-nginx-cors",
             |mut cm| {
+                cm.owned_by_controller(&ditto)?;
                 cm.append_string("nginx-cors.conf", include_str!("data/nginx.cors"));
                 cm.track_with(&mut nginx_tracker);
                 Ok(cm)
@@ -436,6 +453,7 @@ impl DittoController {
             Some(&namespace),
             prefix.clone() + "-nginx-data",
             |mut cm| {
+                cm.owned_by_controller(&ditto)?;
                 cm.append_string("index.html", include_str!("data/index.html"));
                 cm.append_string("ditto-up.svg", include_str!("data/ditto-up.svg"));
                 cm.append_string("ditto-down.svg", include_str!("data/ditto-down.svg"));
@@ -481,6 +499,7 @@ impl DittoController {
                 Some(&namespace),
                 prefix.clone() + "-console",
                 |mut route| {
+                    route.owned_by_controller(&ditto)?;
                     route.spec.tls.use_or_create(|tls| {
                         tls.termination = "Edge".into();
                         tls.insecure_edge_termination_policy = Some("None".into());
@@ -678,14 +697,7 @@ impl DittoController {
             },
         );
 
-        deployment.metadata_mut().owner_references = Some(vec![OwnerReference {
-            api_version: Ditto::API_VERSION.into(),
-            kind: Ditto::KIND.into(),
-            block_owner_deletion: Some(true),
-            controller: Some(true),
-            name: ditto.name(),
-            uid: ditto.meta().uid.as_ref().expect("UID missing").clone(),
-        }]);
+        deployment.owned_by_controller(ditto)?;
 
         if deployment.spec.is_none() {
             deployment.spec = Some(Default::default());
@@ -772,14 +784,7 @@ impl DittoController {
             },
         );
 
-        deployment.metadata_mut().owner_references = Some(vec![OwnerReference {
-            api_version: Ditto::API_VERSION.into(),
-            kind: Ditto::KIND.into(),
-            block_owner_deletion: Some(true),
-            controller: Some(true),
-            name: ditto.name(),
-            uid: ditto.meta().uid.as_ref().expect("UID missing").clone(),
-        }]);
+        deployment.owned_by_controller(ditto)?;
 
         deployment.spec.use_or_create_err(|spec| {
             spec.template.metadata.use_or_create(|metadata| {
@@ -909,14 +914,7 @@ impl DittoController {
             |_| {},
         );
 
-        deployment.metadata_mut().owner_references = Some(vec![OwnerReference {
-            api_version: Ditto::API_VERSION.into(),
-            kind: Ditto::KIND.into(),
-            block_owner_deletion: Some(true),
-            controller: Some(true),
-            name: ditto.name(),
-            uid: ditto.meta().uid.as_ref().expect("UID missing").clone(),
-        }]);
+        deployment.owned_by_controller(ditto)?;
 
         deployment.spec.use_or_create_err(|spec| {
             spec.template.spec.use_or_create_err(|template_spec| {
