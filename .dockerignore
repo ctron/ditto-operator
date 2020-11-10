@@ -1,4 +1,11 @@
-!target/release/ditto-operator
+# exclude Rust build artifacts (except, see below)
 target
+
+# other stuff we don't need
 .github
+
+# exclude dockerfile itself
 Dockerfile
+
+# needs to go last, because we want this file to be included
+!target/release/ditto-operator
