@@ -9,7 +9,7 @@ on:
   pull_request:
 
 env:
-  IMAGE_NAME: vorto-converter
+  IMAGE_NAME: ditto-operator
 
 jobs:
   lint-chart:
