@@ -1,6 +1,15 @@
 name: ci
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+
+env:
+  IMAGE_NAME: vorto-converter
 
 jobs:
   lint-chart:
@@ -8,13 +17,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-      - name: Fetch history for chart testing
-        run: git fetch --prune --unshallow
-      - name: Run chart-testing (lint)
-        uses: helm/chart-testing-action@v1.0.0-rc.2
         with:
-          command: lint
-          config: .github/ct.yaml
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v1
+        with:
+          version: v3.4.0
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2.0.0
+
+      - name: Run chart-testing (lint)
+        run: ct lint
 
   build:
     name: build
@@ -50,22 +65,31 @@ jobs:
           name: binary
           path: target/release/ditto-operator
 
-      - run: ls target/release/
-
-      - name: Build container
+      - name: Create image
         run: |
-          docker build . --file .github/Dockerfile \
-            --tag docker.pkg.github.com/${{ github.repository }}/ditto-operator:ci
+          docker build -f .github/Dockerfile -t $IMAGE_NAME .
 
       - name: Login to github container repository
-        run: docker login -u ${{ github.repository_owner }} -p ${{ secrets.GITHUB_TOKEN }} docker.pkg.github.com
+        if: ${{github.head_ref == ''}} # only for non-PRs
+        run: echo "${{ secrets.GHCR_PAT }}" | docker login https://ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Push latest to github container repository
-        run: docker push docker.pkg.github.com/${{ github.repository }}/ditto-operator:ci
+      - name: Push image to github container repository
+        if: ${{github.head_ref == ''}} # only for non-PRs
+        run: |
+          IMAGE_ID=ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME
+          IMAGE_ID=$(echo $IMAGE_ID | tr '[A-Z]' '[a-z]')
+          VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
+          [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=$(echo $VERSION | sed -e 's/^v//')
+          [ "$VERSION" == "main" ] && VERSION=latest
+          echo IMAGE_ID=$IMAGE_ID
+          echo VERSION=$VERSION
+          docker tag $IMAGE_NAME $IMAGE_ID:$VERSION
+          docker push $IMAGE_ID:$VERSION
 
   install-chart:
     name: install-chart
     runs-on: ubuntu-18.04
+    if: ${{github.head_ref == ''}} # only for non-PRs
     needs:
       - lint-chart
       - build
@@ -83,11 +107,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-      - name: Fetch history for chart testing
-        run: git fetch --prune --unshallow
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v1
+        with:
+          version: v3.4.0
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2.0.0
 
       - name: Create kind ${{ matrix.k8s }} cluster
-        uses: helm/kind-action@v1.0.0-rc.1
+        uses: helm/kind-action@v1.0.0
         with:
           config: .github/kind-config.yaml
           node_image: kindest/node:${{ matrix.k8s }}
@@ -95,26 +127,5 @@ jobs:
       - name: Pre-create namespace
         run: kubectl create namespace ditto-operator-ci
 
-#      - name: Create image pull secret
-#        run: |
-#          kubectl create secret docker-registry ci \
-#            -n ditto-operator-ci \
-#            --docker-server=docker.pkg.github.com \
-#            --docker-username=${{ github.repository_owner }} \
-#            --docker-password=${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login to github container repository
-        run: docker login -u ${{ github.repository_owner }} -p ${{ secrets.GITHUB_TOKEN }} docker.pkg.github.com
-
-      - name: Create image pull secret
-        run: |
-          kubectl create secret generic ci \
-              -n ditto-operator-ci \
-              --from-file=.dockerconfigjson=/home/runner/.docker/config.json \
-              --type=kubernetes.io/dockerconfigjson
-
       - name: Run chart-testing (install)
-        uses: helm/chart-testing-action@v1.0.0-rc.2
-        with:
-          command: install
-          config: .github/ct.yaml
+        run: ct install
