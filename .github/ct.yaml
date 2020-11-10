@@ -6,6 +6,4 @@ chart-dirs:
 chart-repos:
   - bitnami=https://charts.bitnami.com/bitnami
 charts: [ "helm/ditto-operator" ] # need to prefix with "helm/"
-namespace: "ditto-operator-ci"
-release-label: "app.kubernetes.io/instance" # required because of "namespace"
 target-branch: main

@@ -119,6 +119,10 @@ jobs:
         with:
           version: v3.4.0
 
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.7
+
       - name: Set up chart-testing
         uses: helm/chart-testing-action@v2.0.0
 
@@ -128,8 +132,13 @@ jobs:
           config: .github/kind-config.yaml
           node_image: kindest/node:${{ matrix.k8s }}
 
-      - name: Pre-create namespace
-        run: kubectl create namespace ditto-operator-ci
-
       - name: Run chart-testing (install)
-        run: ct install
+        run: |
+          REPO=ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME
+          IMAGE_ID=${REPO}
+          IMAGE_ID=$(echo $IMAGE_ID | tr '[A-Z]' '[a-z]')
+          VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
+          [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=$(echo $VERSION | sed -e 's/^v//')
+          [ "$VERSION" == "main" ] && VERSION=latest
+          echo "Tag: ${VERSION}"
+          ct install --helm-extra-args "--set image.tag=${VERSION} --set image.repository=${IMAGE_ID}"

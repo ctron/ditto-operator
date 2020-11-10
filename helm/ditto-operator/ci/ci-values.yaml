@@ -1,7 +1,3 @@
 image:
-  repository: docker.pkg.github.com/ctron/ditto-operator/ditto-operator  # github repo + container name
-  tag: ci
   pullPolicy: Always
 
-imagePullSecrets:
-  - name: ci
