@@ -33,7 +33,7 @@ jobs:
         uses: helm/chart-testing-action@v2.0.0
 
       - name: Run chart-testing (lint)
-        run: ct lint
+        run: ct lint --config .github/ct.yaml
 
   build:
     name: build
@@ -141,4 +141,5 @@ jobs:
           [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=$(echo $VERSION | sed -e 's/^v//')
           [ "$VERSION" == "main" ] && VERSION=latest
           echo "Tag: ${VERSION}"
-          ct install --helm-extra-args "--set image.tag=${VERSION} --set image.repository=${IMAGE_ID}"
+
+          ct install --config .github/ct.yaml --helm-extra-args "--set image.tag=${VERSION} --set image.repository=${IMAGE_ID}"
