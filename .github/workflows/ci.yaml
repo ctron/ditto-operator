@@ -142,4 +142,14 @@ jobs:
           [ "$VERSION" == "main" ] && VERSION=latest
           echo "Tag: ${VERSION}"
 
-          ct install --config .github/ct.yaml --helm-extra-args "--set image.tag=${VERSION} --set image.repository=${IMAGE_ID}"
+          # work around shortcomings of "ct"
+          mkdir -p helm/ditto-operator/ci
+          (cat <<EOF
+          image:
+            repository: ${IMAGE_ID}
+            tag: ${VERSION}
+            pullPolicy: Always
+          EOF
+          ) > helm/ditto-operator/ci/ci-values.yaml
+
+          ct install --config .github/ct.yaml
