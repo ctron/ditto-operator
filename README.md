@@ -1,3 +1,7 @@
+# Operator for Eclipse Ditto™
+
+[![CI](https://github.com/ctron/ditto-operator/workflows/ci/badge.svg)](https://github.com/ctron/ditto-operator/actions?query=workflow%3Aci)
+
 ## Install the operator
 
 You need to install the operator. Once you have installed the operator, you can create a new Ditto instance by
