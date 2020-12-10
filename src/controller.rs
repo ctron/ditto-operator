@@ -63,7 +63,7 @@ pub struct DittoController {
 }
 
 pub const DITTO_REGISTRY: &str = "docker.io/eclipse";
-pub const DITTO_VERSION: &str = "1.4.0";
+pub const DITTO_VERSION: &str = "1.5.0";
 pub const KUBERNETES_LABEL_COMPONENT: &str = "app.kubernetes.io/component";
 pub const OPENSHIFT_ANNOTATION_CONNECT: &str = "app.openshift.io/connects-to";
 
