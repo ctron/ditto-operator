@@ -483,16 +483,15 @@ impl DittoController {
             Some(&namespace),
             prefix.clone() + "-swaggerui-api",
             |mut cm| {
-                let oauth_auth_url = ditto
-                    .spec
-                    .keycloak
-                    .as_ref()
-                    .map(|keycloak| Self::keycloak_url(keycloak, "/auth"));
+                let keycloak = ditto.spec.keycloak.as_ref();
+                let openapi = ditto.spec.openapi.as_ref();
+                let oauth_auth_url = keycloak.map(|keycloak| Self::keycloak_url(keycloak, "/auth"));
 
                 let options = ApiOptions {
+                    server_label: openapi.and_then(|o| o.server_label.clone()),
                     oauth_auth_url,
-                    oauth_label: None,
-                    oauth_description: None,
+                    oauth_label: keycloak.and_then(|k| k.label.clone()),
+                    oauth_description: keycloak.and_then(|k| k.description.clone()),
                 };
 
                 cm.owned_by_controller(&ditto)?;

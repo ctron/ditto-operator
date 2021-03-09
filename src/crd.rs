@@ -36,6 +36,9 @@ pub struct DittoSpec {
     pub version: Option<String>,
     /// Enable and configure keycloak integration.
     pub keycloak: Option<Keycloak>,
+
+    /// Influence some options of the hosted OpenAPI spec.
+    pub openapi: Option<OpenApi>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -50,6 +53,23 @@ pub struct Keycloak {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub groups: Vec<String>,
+
+    /// Label when referencing this login option.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Description of this login option.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenApi {
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_label: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

@@ -3,8 +3,10 @@ use serde_yaml::{Mapping, Sequence, Value};
 
 #[derive(Clone, Debug, Default)]
 pub struct ApiOptions {
-    pub oauth_label: Option<String>,
+    pub server_label: Option<String>,
+
     pub oauth_auth_url: Option<String>,
+    pub oauth_label: Option<String>,
     pub oauth_description: Option<String>,
 }
 
@@ -24,11 +26,15 @@ fn openapi_inject(api: &str, options: &ApiOptions) -> Result<String> {
     let servers = api["servers"]
         .as_sequence_mut()
         .ok_or_else(|| anyhow!("Unable to finder 'server' section"))?;
+
     servers.retain(|server| {
         server["url"]
             .as_str()
             .map_or(false, |url| url.starts_with('/'))
     });
+    if let Some(label) = &options.server_label {
+        servers[0]["description"] = label.clone().into();
+    }
 
     // oauth
 
