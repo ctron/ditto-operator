@@ -521,20 +521,25 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update(
-            &self.configmaps,
-            Some(&namespace),
-            prefix.clone() + "-nginx-htpasswd",
-            |mut cm| {
-                cm.owned_by_controller(&ditto)?;
-                if ditto.spec.create_default_user.unwrap_or(true) {
-                    cm.init_string("nginx.htpasswd", "ditto:A6BgmB8IEtPTs");
-                }
-                cm.track_with(&mut nginx_tracker);
-                Ok(cm)
-            },
-        )
-        .await?;
+        if ditto.spec.keycloak.is_none() {
+            // only create htpasswd if we are not using OAuth ...
+            create_or_update(
+                &self.configmaps,
+                Some(&namespace),
+                prefix.clone() + "-nginx-conf",
+                |mut cm| {
+                    cm.owned_by_controller(&ditto)?;
+                    if ditto.spec.create_default_user.unwrap_or(true) {
+                        cm.init_string("nginx.htpasswd", "ditto:A6BgmB8IEtPTs");
+                    }
+                    cm.track_with(&mut nginx_tracker);
+                    Ok(cm)
+                },
+            )
+            .await?;
+            // ... however, we don't delete an existing secret, as it may contain information you
+            // want to keep.
+        }
 
         create_or_update(
             &self.configmaps,
