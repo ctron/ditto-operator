@@ -484,7 +484,7 @@ impl DittoController {
             prefix.clone() + "-swaggerui-api",
             |mut cm| {
                 let keycloak = ditto.spec.keycloak.as_ref();
-                let openapi = ditto.spec.openapi.as_ref();
+                let openapi = ditto.spec.open_api.as_ref();
                 let oauth_auth_url = keycloak.map(|keycloak| Self::keycloak_url(keycloak, "/auth"));
 
                 let options = ApiOptions {
