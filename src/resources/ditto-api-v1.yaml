@@ -26,6 +26,7 @@ tags:
 security:
   - basicAuth: []
   - bearerAuth: []
+  - sso: []
 paths:
   /things:
     get:
@@ -2500,6 +2501,14 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: 'A JSON Web Token issued by a supported OAuth 2.0 Identity Provider, e.g. a Google "id_token"'
+    sso:
+      type: oauth2
+      description: SSO
+      flows:
+        implicit:
+          authorizationUrl: https://keycloak-drogue-dev.apps.wonderful.iot-playground.org/auth/realms/drogue/protocol/openid-connect/auth
+          scopes:
+            openid: OpenID
   schemas:
     Error:
       properties:

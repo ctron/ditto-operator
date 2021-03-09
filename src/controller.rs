@@ -1,5 +1,5 @@
-/**
- * Copyright (c) 2020 Red Hat Inc.
+/*
+ * Copyright (c) 2020, 2021 Red Hat Inc.
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -10,45 +10,46 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-use anyhow::{anyhow, Result};
-
-use crate::crd::{Ditto, DittoStatus};
-use k8s_openapi::api::apps::v1::Deployment;
-use k8s_openapi::{ByteString, Resource};
-use kube::api::{Meta, PostParams};
-use kube::{Api, Client};
-
-use std::collections::BTreeMap;
-use std::fmt::Display;
-
-use operator_framework::install::config::{AppendBinary, AppendString};
-use operator_framework::install::container::ApplyContainer;
-use operator_framework::install::container::ApplyEnvironmentVariable;
-use operator_framework::install::container::ApplyPort;
-use operator_framework::install::container::SetArgs;
-use operator_framework::install::container::SetResources;
-
-use log::debug;
-use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
-
-use crate::data;
-
-use k8s_openapi::api::core::v1::{
-    ConfigMap, ConfigMapVolumeSource, Container, HTTPGetAction, Probe, Secret, Service,
-    ServiceAccount, ServicePort, Volume, VolumeMount,
+use crate::{
+    crd::{Ditto, DittoStatus, Keycloak},
+    data,
 };
-use k8s_openapi::api::rbac::v1::{PolicyRule, Role, RoleBinding, Subject};
-use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
-
+use anyhow::{anyhow, Result};
+use k8s_openapi::{
+    api::{
+        apps::v1::Deployment,
+        core::v1::{
+            ConfigMap, ConfigMapVolumeSource, Container, HTTPGetAction, Probe, Secret, Service,
+            ServiceAccount, ServicePort, Volume, VolumeMount,
+        },
+        rbac::v1::{PolicyRule, Role, RoleBinding, Subject},
+    },
+    apimachinery::pkg::util::intstr::IntOrString,
+    ByteString, Resource,
+};
+use kube::{
+    api::{DeleteParams, Meta, PostParams},
+    Api, Client,
+};
+use log::debug;
 use openshift_openapi::api::route::v1::{Route, RoutePort};
-
-use operator_framework::process::create_or_update;
-use operator_framework::tracker::{ConfigTracker, Trackable};
-use operator_framework::utils::UseOrCreate;
-
-use operator_framework::install::meta::OwnedBy;
-use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
+use operator_framework::{
+    install::{
+        config::{AppendBinary, AppendString},
+        container::{
+            ApplyContainer, ApplyEnvironmentVariable, ApplyPort, SetArgs, SetCommand, SetResources,
+        },
+        meta::OwnedBy,
+        DeleteOptionally, KubeReader,
+    },
+    process::create_or_update,
+    tracker::{ConfigTracker, Trackable},
+    utils::UseOrCreate,
+};
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use serde_json::json;
+use std::{collections::BTreeMap, fmt::Display};
 
 pub struct DittoController {
     client: Client,
@@ -152,6 +153,7 @@ impl DittoController {
         let service_account_name = prefix.to_string();
 
         let ditto_tracker = &mut ConfigTracker::new();
+        let mut gateway_tracker = &mut ConfigTracker::new();
 
         create_or_update(
             &self.secrets,
@@ -178,11 +180,24 @@ impl DittoController {
         )
         .await?;
 
+        let reader = KubeReader::new(&self.configmaps, &self.secrets);
+        let credentials = match (&ditto.spec.mongo_db.username, &ditto.spec.mongo_db.password) {
+            (Some(username), Some(password)) => {
+                let password = password.read_value(&reader).await?.unwrap_or_default();
+                let username = utf8_percent_encode(&username, NON_ALPHANUMERIC);
+                let password = utf8_percent_encode(&password, NON_ALPHANUMERIC);
+                format!("{}:{}@", username, password)
+            }
+            _ => "".to_string(),
+        };
+
         create_or_update(
             &self.secrets,
             Some(&namespace),
             prefix.clone() + "-mongodb-secret",
             |mut secret| {
+                secret.owned_by_controller(&ditto)?;
+
                 for n in &[
                     "concierge",
                     "connectivity",
@@ -190,21 +205,20 @@ impl DittoController {
                     "searchDB",
                     "policies",
                 ] {
-                    secret.owned_by_controller(&ditto)?;
-                    let credentials =
-                        match (&ditto.spec.mongo_db.username, &ditto.spec.mongo_db.password) {
-                            (Some(username), Some(password)) => {
-                                let username = utf8_percent_encode(&username, NON_ALPHANUMERIC);
-                                let password = utf8_percent_encode(&password, NON_ALPHANUMERIC);
-                                format!("{}:{}@", username, password)
-                            }
-                            _ => "".to_string(),
-                        };
                     secret.append_string(
                         format!("{}-uri", n),
                         format!(
                             "mongodb://{}{}:{}/{}",
-                            credentials, ditto.spec.mongo_db.host, ditto.spec.mongo_db.port, n,
+                            credentials,
+                            ditto.spec.mongo_db.host,
+                            ditto.spec.mongo_db.port,
+                            ditto
+                                .spec
+                                .mongo_db
+                                .database
+                                .as_ref()
+                                .cloned()
+                                .unwrap_or_else(|| "ditto".into()),
                         ),
                     );
                 }
@@ -259,6 +273,34 @@ impl DittoController {
         )
         .await?;
 
+        if ditto.spec.keycloak.is_some() {
+            create_or_update(
+                &self.secrets,
+                Some(&namespace),
+                prefix.clone() + "-oauth",
+                |mut secret| {
+                    secret.owned_by_controller(&ditto)?;
+                    secret.init_string_from("cookie.secret", || {
+                        thread_rng()
+                            .sample_iter(&Alphanumeric)
+                            .take(32)
+                            .map(char::from)
+                            .collect::<String>()
+                    });
+                    secret.track_with(&mut gateway_tracker);
+                    Ok(secret)
+                },
+            )
+            .await?;
+        } else {
+            self.secrets
+                .delete_optionally(&(prefix.clone() + "-oauth"), &DeleteParams::default())
+                .await?;
+        }
+
+        // extend the gateway tracker with the ditto tracker
+        gateway_tracker.track(ditto_tracker.current_hash().as_bytes());
+
         create_or_update(
             &self.deployments,
             Some(&namespace),
@@ -279,7 +321,7 @@ impl DittoController {
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-gateway",
-            |obj| self.reconcile_gateway_deployment(&ditto, obj, ditto_tracker),
+            |obj| self.reconcile_gateway_deployment(&ditto, obj, gateway_tracker),
         )
         .await?;
 
@@ -360,11 +402,16 @@ impl DittoController {
                     labels.extend(self.service_selector("gateway", &ditto));
                     spec.selector = Some(labels);
 
+                    let target_port = match ditto.spec.keycloak {
+                        Some(_) => "oauth",
+                        None => "http",
+                    };
+
                     // set ports
                     spec.ports = Some(vec![ServicePort {
                         port: 8080,
                         name: Some("http".into()),
-                        target_port: Some(IntOrString::String("http".into())),
+                        target_port: Some(IntOrString::String(target_port.into())),
                         ..Default::default()
                     }]);
                 });
@@ -436,8 +483,14 @@ impl DittoController {
             prefix.clone() + "-swaggerui-api",
             |mut cm| {
                 cm.owned_by_controller(&ditto)?;
-                cm.append_string("ditto-api-v1.yaml", include_str!("data/ditto-api-v1.yaml"));
-                cm.append_string("ditto-api-v2.yaml", include_str!("data/ditto-api-v2.yaml"));
+                cm.append_string(
+                    "ditto-api-v1.yaml",
+                    include_str!("resources/ditto-api-v1.yaml"),
+                );
+                cm.append_string(
+                    "ditto-api-v2.yaml",
+                    include_str!("resources/ditto-api-v2.yaml"),
+                );
                 cm.track_with(&mut nginx_tracker);
                 Ok(cm)
             },
@@ -450,7 +503,10 @@ impl DittoController {
             prefix.clone() + "-nginx-conf",
             |mut cm| {
                 cm.owned_by_controller(&ditto)?;
-                cm.append_string("nginx.conf", data::nginx_conf(ditto.name(), true));
+                cm.append_string(
+                    "nginx.conf",
+                    data::nginx_conf(ditto.name(), true, ditto.spec.keycloak.is_some()),
+                );
                 cm.track_with(&mut nginx_tracker);
                 Ok(cm)
             },
@@ -478,7 +534,7 @@ impl DittoController {
             prefix.clone() + "-nginx-cors",
             |mut cm| {
                 cm.owned_by_controller(&ditto)?;
-                cm.append_string("nginx-cors.conf", include_str!("data/nginx.cors"));
+                cm.append_string("nginx-cors.conf", include_str!("resources/nginx.cors"));
                 cm.track_with(&mut nginx_tracker);
                 Ok(cm)
             },
@@ -491,22 +547,28 @@ impl DittoController {
             prefix.clone() + "-nginx-data",
             |mut cm| {
                 cm.owned_by_controller(&ditto)?;
-                cm.append_string("index.html", include_str!("data/index.html"));
-                cm.append_string("ditto-up.svg", include_str!("data/ditto-up.svg"));
-                cm.append_string("ditto-down.svg", include_str!("data/ditto-down.svg"));
-                cm.append_string("ditto-api-v1.yaml", include_str!("data/ditto-api-v1.yaml"));
-                cm.append_string("ditto-api-v2.yaml", include_str!("data/ditto-api-v2.yaml"));
+                cm.append_string("index.html", include_str!("resources/index.html"));
+                cm.append_string("ditto-up.svg", include_str!("resources/ditto-up.svg"));
+                cm.append_string("ditto-down.svg", include_str!("resources/ditto-down.svg"));
+                cm.append_string(
+                    "ditto-api-v1.yaml",
+                    include_str!("resources/ditto-api-v1.yaml"),
+                );
+                cm.append_string(
+                    "ditto-api-v2.yaml",
+                    include_str!("resources/ditto-api-v2.yaml"),
+                );
                 cm.append_binary(
                     "favicon-16x16.png",
-                    &include_bytes!("data/favicon-16x16.png")[..],
+                    &include_bytes!("resources/favicon-16x16.png")[..],
                 );
                 cm.append_binary(
                     "favicon-32x32.png",
-                    &include_bytes!("data/favicon-32x32.png")[..],
+                    &include_bytes!("resources/favicon-32x32.png")[..],
                 );
                 cm.append_binary(
                     "favicon-96x96.png",
-                    &include_bytes!("data/favicon-96x96.png")[..],
+                    &include_bytes!("resources/favicon-96x96.png")[..],
                 );
                 cm.track_with(&mut nginx_tracker);
                 Ok(cm)
@@ -574,12 +636,24 @@ impl DittoController {
         )
     }
 
+    fn keycloak_url(arg: &str, keycloak: &Keycloak, path: &str) -> String {
+        format!(
+            "{arg}={url}/auth/realms/{realm}/protocol/openid-connect/{path}",
+            arg = arg,
+            url = keycloak.url,
+            realm = keycloak.realm,
+            path = path
+        )
+    }
+
     fn reconcile_gateway_deployment(
         &self,
         ditto: &Ditto,
         deployment: Deployment,
         config_tracker: &ConfigTracker,
     ) -> Result<Deployment> {
+        let prefix = ditto.name();
+
         let mut deployment = self.reconcile_default_deployment(
             ditto,
             deployment,
@@ -590,7 +664,73 @@ impl DittoController {
             |_| {},
         )?;
 
+        if let Some(keycloak) = &ditto.spec.keycloak {
+            deployment.apply_container("oauth-proxy", |container| {
+                container.image = Some("quay.io/oauth2-proxy/oauth2-proxy:v7.0.1".into());
+                container.image_pull_policy = Some("IfNotPresent".into());
+
+                container.add_env_from_field_path("HOSTNAME", "status.podIP")?;
+                keycloak
+                    .client_id
+                    .apply_to_env(container, "OAUTH2_PROXY_CLIENT_ID");
+                keycloak
+                    .client_secret
+                    .apply_to_env(container, "OAUTH2_PROXY_CLIENT_SECRET");
+
+                let mut args: Vec<_> = vec![
+                    "--email-domain=*".to_string(),
+                    "--scope=openid".to_string(),
+                    "--reverse-proxy=true".to_string(),
+                    "--http-address=0.0.0.0:4180".to_string(),
+                    "--upstream=http://$(HOSTNAME):8080/".to_string(),
+                    "--provider=keycloak".to_string(),
+                    Self::keycloak_url("--login-url", &keycloak, "auth"),
+                    Self::keycloak_url("--redeem-url", &keycloak, "token"),
+                    Self::keycloak_url("--profile-url", &keycloak, "userinfo"),
+                    Self::keycloak_url("--validate-url", &keycloak, "userinfo"),
+                ];
+
+                for group in &keycloak.groups {
+                    args.push(format!("--allowed-group={}", group));
+                }
+
+                container.args = Some(args);
+
+                container.add_env_from_secret(
+                    "OAUTH2_PROXY_COOKIE_SECRET",
+                    prefix.clone() + "-oauth",
+                    "cookie.secret",
+                )?;
+
+                container.add_port("oauth", 4180, None)?;
+
+                Ok(())
+            })?;
+        } else {
+            deployment.spec.use_or_create(|spec| {
+                spec.template.spec.use_or_create(|pod_spec| {
+                    pod_spec
+                        .containers
+                        .retain(|container| container.name != "oauth-proxy");
+                });
+            });
+        }
+
         deployment.apply_container("service", |container| {
+            if let Some(keycloak) = &ditto.spec.keycloak {
+                let issuer_url = format!("{url}/auth/realms/{realm}", url=keycloak.url, realm=keycloak.realm);
+                container.args.use_or_create(|args| {
+                    // we need to insert this in the front, as `-D` is an argument for the JVM, no the application
+                    if let Some(url) = issuer_url.strip_prefix("https://") {
+                        args.insert(0, format!("-Dditto.gateway.authentication.oauth.openid-connect-issuers.keycloak.issuer={}", url));    
+                    } else {
+                        anyhow::bail!("Using a non-https issuer URL with Ditto is not supported");
+                    }
+
+                     Ok(())
+                 })?;
+            }
+
             container.add_env(
                 "ENABLE_DUMMY_AUTH",
                 ditto.spec.enable_dummy_auth.to_string(),
@@ -740,35 +880,35 @@ impl DittoController {
             });
 
             spec.template.apply_container("service", |container| {
-                    container.image = Some(image_name.to_string());
+                container.image = Some(image_name.to_string());
 
-                    container.args(vec!["java", "-jar", "/opt/ditto/starter.jar"]);
-                    container.command = None;
+                container.command(vec!["java"]); 
+                container.args(vec![ "-jar", "/opt/ditto/starter.jar"]);
 
-                    container.add_port("http", 8080, None)?;
-                    container.add_port("remoting", 2551, None)?;
-                    container.add_port("management", 8558, None)?;
+                container.add_port("http", 8080, None)?;
+                container.add_port("remoting", 2551, None)?;
+                container.add_port("management", 8558, None)?;
 
-                    container.add_env("DISCOVERY_METHOD", "akka-dns")?;
-                    container.add_env("CLUSTER_BS_SERVICE_NAME", format!("{}-akka", ditto.name()))?;
-                    container.add_env("CLUSTER_BS_SERVICE_NAMESPACE", ditto.namespace().unwrap_or_default())?;
+                container.add_env("DISCOVERY_METHOD", "akka-dns")?;
+                container.add_env("CLUSTER_BS_SERVICE_NAME", format!("{}-akka", ditto.name()))?;
+                container.add_env("CLUSTER_BS_SERVICE_NAMESPACE", ditto.namespace().unwrap_or_default())?;
 
-                    container.add_env("OPENJ9_JAVA_OPTIONS", "-XX:+ExitOnOutOfMemoryError -Xtune:virtualized -Xss512k -XX:MaxRAMPercentage=80 -XX:InitialRAMPercentage=40 -Dakka.coordinated-shutdown.exit-jvm=on -Dorg.mongodb.async.type=netty")?;
-                    container.add_env("MONGO_DB_SSL_ENABLED", "false")?;
-                    container.add_env_from_field_path("POD_NAMESPACE", "metadata.namespace")?;
-                    container.add_env_from_field_path("INSTANCE_INDEX", "metadata.name")?;
-                    container.add_env_from_field_path("HOSTNAME", "status.podIP")?;
+                container.add_env("OPENJ9_JAVA_OPTIONS", "-XX:+ExitOnOutOfMemoryError -Xtune:virtualized -Xss512k -XX:MaxRAMPercentage=80 -XX:InitialRAMPercentage=40 -Dakka.coordinated-shutdown.exit-jvm=on -Dorg.mongodb.async.type=netty")?;
+                container.add_env("MONGO_DB_SSL_ENABLED", "false")?;
+                container.add_env_from_field_path("POD_NAMESPACE", "metadata.namespace")?;
+                container.add_env_from_field_path("INSTANCE_INDEX", "metadata.name")?;
+                container.add_env_from_field_path("HOSTNAME", "status.podIP")?;
 
-                    container.set_resources("memory", Some("1Gi"), Some("1Gi"));
+                container.set_resources("memory", Some("1Gi"), Some("1Gi"));
 
-                    if let Some(uri_key) = uri_key {
-                        container.add_env_from_secret("MONGO_DB_URI", prefix + "-mongodb-secret", uri_key)?;
-                    }
+                if let Some(uri_key) = uri_key {
+                    container.add_env_from_secret("MONGO_DB_URI", prefix + "-mongodb-secret", uri_key)?;
+                }
 
-                    self.add_probes(container)?;
+                self.add_probes(container)?;
 
-                    Ok(())
-                })?;
+                Ok(())
+            })?;
         }
 
         Ok(deployment)
@@ -943,7 +1083,7 @@ impl DittoController {
                 template_spec
                     .init_containers
                     .apply_container("init", |container| {
-                        container.image = Some("docker.io/swaggerapi/swagger-ui:3.17.4".into());
+                        container.image = Some("docker.io/swaggerapi/swagger-ui:v3.44.1".into());
                         container.command = Some(
                             vec![
                                 "sh",
@@ -980,8 +1120,27 @@ impl DittoController {
                 template_spec
                     .containers
                     .apply_container("swagger-ui", |container| {
-                        container.image = Some("docker.io/swaggerapi/swagger-ui:3.17.4".into());
+                        container.image = Some("docker.io/swaggerapi/swagger-ui:v3.44.1".into());
+
                         container.add_port("http", 8080, None)?;
+
+                        if let Some(keycloak) = &ditto.spec.keycloak {
+                            keycloak
+                                .client_id
+                                .apply_to_env(container, "OAUTH_CLIENT_ID");
+                            container.set_env("OAUTH_REALM", Some(keycloak.realm.clone()))?;
+                            container.set_env("OAUTH_SCOPES", Some("openid"))?;
+                            // unfortunately Swagger UI doesn't support nonces
+                            container.set_env(
+                                "OAUTH_ADDITIONAL_PARAMS",
+                                Some(json!({"nonce": "1"}).to_string()),
+                            )?;
+                        } else {
+                            container.drop_env("OAUTH_CLIENT_ID");
+                            container.drop_env("OAUTH_REALM");
+                            container.drop_env("OAUTH_SCOPES");
+                            container.drop_env("OAUTH_ADDITIONAL_PARAMS");
+                        }
 
                         let mut mounts = Vec::new();
                         for m in &[

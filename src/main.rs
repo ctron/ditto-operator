@@ -1,8 +1,8 @@
 // required for kube-runtime
 #![type_length_limit = "20000000"]
 
-/**
- * Copyright (c) 2020 Red Hat Inc.
+/*
+ * Copyright (c) 2020, 2021 Red Hat Inc.
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -32,6 +32,7 @@ use k8s_openapi::api::{
     core::v1::{ConfigMap, Secret, Service, ServiceAccount},
     rbac::v1::{Role, RoleBinding},
 };
+use kube_runtime::reflector::ObjectRef;
 use openshift_openapi::api::route::v1::Route;
 
 #[derive(Debug, Snafu)]
@@ -79,11 +80,23 @@ async fn main() -> anyhow::Result<()> {
     log::info!("Starting operator...");
 
     let dittos: Api<Ditto> = Api::namespaced(client.clone(), &namespace);
-    let mut c = Controller::new(dittos, ListParams::default())
-        .owns(
-            Api::<ConfigMap>::namespaced(client.clone(), &namespace),
-            Default::default(),
-        )
+    let mut c = Controller::new(dittos, ListParams::default());
+
+    // trigger changes for every configmap and secret, as any of them could be referenced
+    let store = c.store();
+    c = c.watches(
+        Api::<ConfigMap>::namespaced(client.clone(), &namespace),
+        Default::default(),
+        move |_| store.state().into_iter().map(|i| ObjectRef::from_obj(&i)),
+    );
+    let store = c.store();
+    c = c.watches(
+        Api::<Secret>::namespaced(client.clone(), &namespace),
+        Default::default(),
+        move |_| store.state().into_iter().map(|i| ObjectRef::from_obj(&i)),
+    );
+
+    c = c
         .owns(
             Api::<Deployment>::namespaced(client.clone(), &namespace),
             Default::default(),
@@ -94,10 +107,6 @@ async fn main() -> anyhow::Result<()> {
         )
         .owns(
             Api::<RoleBinding>::namespaced(client.clone(), &namespace),
-            Default::default(),
-        )
-        .owns(
-            Api::<Secret>::namespaced(client.clone(), &namespace),
             Default::default(),
         )
         .owns(

@@ -1219,9 +1219,8 @@ dependencies = [
 
 [[package]]
 name = "operator-framework"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a60abd4d8d045383899edf635b50d7520d27fc35ecc0fba19347ff64165b7cb3"
+version = "0.5.0"
+source = "git+https://github.com/ctron/operator-framework?rev=73c024501745edbea9b6fd15656a7451025a9b62#73c024501745edbea9b6fd15656a7451025a9b62"
 dependencies = [
  "anyhow",
  "async-trait",

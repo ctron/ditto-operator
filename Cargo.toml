@@ -13,7 +13,7 @@ kube-runtime = "0.42"
 snafu = "0.6"
 
 k8s-openapi = { version = "0.9", default-features = false }
-openshift-openapi = { version = "0.1", default-features = false, features = ["v4_3"] }
+openshift-openapi = { version = "0.1", default-features = false, features = ["v4_4"] }
 
 serde = "1.0"
 serde_derive = "1.0"
@@ -35,7 +35,7 @@ log = "0.4"
 env_logger = "0.7"
 rand = "0.7"
 sha1 = "0.6"
-operator-framework = { version = "0.4", features = [ "v1_16" ] }
+operator-framework = { version = "0.5", features = [ "v1_17" ] }
 
 string-error = "0.1.0"
 
@@ -43,4 +43,5 @@ string-error = "0.1.0"
 #k8s-openapi = { git = "https://github.com/Arnavion/k8s-openapi.git#b8046d9a" }
 #kube = { git = "https://github.com/clux/kube-rs", branch="master" }
 #kube-derive = { git = "https://github.com/clux/kube-rs", branch="master" }
-#operator-framework = { path = "/home/jreimann/git/operator-framework" }
+#operator-framework = { path = "../operator-framework" }
+operator-framework = { git = "https://github.com/ctron/operator-framework", rev = "73c024501745edbea9b6fd15656a7451025a9b62" }

@@ -1,5 +1,5 @@
-/**
- * Copyright (c) 2020 Red Hat Inc.
+/*
+ * Copyright (c) 2020, 2021 Red Hat Inc.
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -11,6 +11,7 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 use kube_derive::CustomResource;
+use operator_framework::install::ValueOrReference;
 use serde::{Deserialize, Serialize};
 
 #[derive(CustomResource, Serialize, Deserialize, Default, Debug, Clone, PartialEq)]
@@ -33,6 +34,22 @@ pub struct DittoSpec {
     pub create_default_user: Option<bool>,
     /// allow to override the Ditto image version.
     pub version: Option<String>,
+    /// Enable and configure keycloak integration.
+    pub keycloak: Option<Keycloak>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Keycloak {
+    pub url: String,
+    pub realm: String,
+
+    pub client_id: ValueOrReference,
+    pub client_secret: ValueOrReference,
+
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -40,8 +57,10 @@ pub struct DittoSpec {
 pub struct MongoDb {
     pub host: String,
     pub port: u16,
+    pub database: Option<String>,
+
     pub username: Option<String>,
-    pub password: Option<String>,
+    pub password: Option<ValueOrReference>,
 }
 
 impl Default for MongoDb {
@@ -49,6 +68,7 @@ impl Default for MongoDb {
         MongoDb {
             port: 27017,
             host: Default::default(),
+            database: Default::default(),
             username: Default::default(),
             password: Default::default(),
         }
