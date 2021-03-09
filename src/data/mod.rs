@@ -12,5 +12,7 @@
  */
 
 mod nginx;
+mod openapi;
 
 pub use nginx::*;
+pub use openapi::*;

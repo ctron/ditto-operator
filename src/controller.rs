@@ -10,6 +10,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
+use crate::data::{openapi_v1, openapi_v2, ApiOptions};
 use crate::{
     crd::{Ditto, DittoStatus, Keycloak},
     data,
@@ -482,16 +483,23 @@ impl DittoController {
             Some(&namespace),
             prefix.clone() + "-swaggerui-api",
             |mut cm| {
+                let oauth_auth_url = ditto
+                    .spec
+                    .keycloak
+                    .as_ref()
+                    .map(|keycloak| Self::keycloak_url(keycloak, "/auth"));
+
+                let options = ApiOptions {
+                    oauth_auth_url,
+                    oauth_label: None,
+                    oauth_description: None,
+                };
+
                 cm.owned_by_controller(&ditto)?;
-                cm.append_string(
-                    "ditto-api-v1.yaml",
-                    include_str!("resources/ditto-api-v1.yaml"),
-                );
-                cm.append_string(
-                    "ditto-api-v2.yaml",
-                    include_str!("resources/ditto-api-v2.yaml"),
-                );
+                cm.append_string("ditto-api-v1.yaml", openapi_v1(&options)?);
+                cm.append_string("ditto-api-v2.yaml", openapi_v2(&options)?);
                 cm.track_with(&mut nginx_tracker);
+
                 Ok(cm)
             },
         )
@@ -636,14 +644,17 @@ impl DittoController {
         )
     }
 
-    fn keycloak_url(arg: &str, keycloak: &Keycloak, path: &str) -> String {
+    fn keycloak_url(keycloak: &Keycloak, path: &str) -> String {
         format!(
-            "{arg}={url}/auth/realms/{realm}/protocol/openid-connect/{path}",
-            arg = arg,
+            "{url}/auth/realms/{realm}/protocol/openid-connect{path}",
             url = keycloak.url,
             realm = keycloak.realm,
             path = path
         )
+    }
+
+    fn keycloak_url_arg(arg: &str, keycloak: &Keycloak, path: &str) -> String {
+        format!("{}={}", arg, Self::keycloak_url(keycloak, path))
     }
 
     fn reconcile_gateway_deployment(
@@ -684,10 +695,10 @@ impl DittoController {
                     "--http-address=0.0.0.0:4180".to_string(),
                     "--upstream=http://$(HOSTNAME):8080/".to_string(),
                     "--provider=keycloak".to_string(),
-                    Self::keycloak_url("--login-url", &keycloak, "auth"),
-                    Self::keycloak_url("--redeem-url", &keycloak, "token"),
-                    Self::keycloak_url("--profile-url", &keycloak, "userinfo"),
-                    Self::keycloak_url("--validate-url", &keycloak, "userinfo"),
+                    Self::keycloak_url_arg("--login-url", &keycloak, "/auth"),
+                    Self::keycloak_url_arg("--redeem-url", &keycloak, "/token"),
+                    Self::keycloak_url_arg("--profile-url", &keycloak, "/userinfo"),
+                    Self::keycloak_url_arg("--validate-url", &keycloak, "/userinfo"),
                 ];
 
                 for group in &keycloak.groups {
