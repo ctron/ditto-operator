@@ -27,7 +27,7 @@ fn openapi_inject(api: &str, options: &ApiOptions) -> Result<String> {
     servers.retain(|server| {
         server["url"]
             .as_str()
-            .map_or(false, |url| url.starts_with("/"))
+            .map_or(false, |url| url.starts_with('/'))
     });
 
     // oauth

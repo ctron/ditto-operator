@@ -7,35 +7,35 @@ license = "EPL-2.0"
 
 [dependencies]
 
-kube = "0.42"
-kube-derive = "0.42"
-kube-runtime = "0.42"
+kube = "0.51"
+kube-derive = "0.51"
+kube-runtime = "0.51"
 snafu = "0.6"
 
-k8s-openapi = { version = "0.9", default-features = false }
-openshift-openapi = { version = "0.1", default-features = false, features = ["v4_4"] }
+k8s-openapi = { version = "0.11", default-features = false }
+openshift-openapi = { version = "0.3", default-features = false, features = ["v4_4"] }
+
+tokio = { version = "1", features = ["full"] }
 
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
 serde_yaml = "0.8"
 
-tokio = { version = "0.2", features = ["full"] }
-
 futures-util = "0.3"
 futures = "0.3"
-anyhow = "1.0"
+anyhow = "1"
 
 async-trait = "0.1"
-async-std = "1.5"
+#async-std = "1.5"
 
-percent-encoding = "2.1.0"
+percent-encoding = "2"
 
 log = "0.4"
 env_logger = "0.7"
 rand = "0.7"
 sha1 = "0.6"
-operator-framework = { version = "0.5", features = [ "v1_17" ] }
+operator-framework = { version = "0.5", features = ["v1_17"] }
 
 string-error = "0.1.0"
 
@@ -44,4 +44,4 @@ string-error = "0.1.0"
 #kube = { git = "https://github.com/clux/kube-rs", branch="master" }
 #kube-derive = { git = "https://github.com/clux/kube-rs", branch="master" }
 #operator-framework = { path = "../operator-framework" }
-operator-framework = { git = "https://github.com/ctron/operator-framework", rev = "73c024501745edbea9b6fd15656a7451025a9b62" }
+operator-framework = { git = "https://github.com/ctron/operator-framework", rev = "7fc414ecc0285618d2b932cbbbe6cb4ae68e1392" }

@@ -20,7 +20,7 @@ mod data;
 use crate::controller::DittoController;
 use crate::crd::Ditto;
 
-use futures::{StreamExt, TryFutureExt};
+use futures::StreamExt;
 use snafu::Snafu;
 use std::{error::Error, fmt, time::Duration};
 
@@ -75,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
     let has_openshift = has_flag("HAS_OPENSHIFT", false)?;
 
     let controller = DittoController::new(&namespace, client.clone(), has_openshift);
-    let context = Context::new(());
+    let context = Context::new(controller);
 
     log::info!("Starting operator...");
 
@@ -128,13 +128,13 @@ async fn main() -> anyhow::Result<()> {
     // now run it
 
     c.run(
-        |resource, _| {
-            controller
-                .reconcile(resource)
-                .map_ok(|_| ReconcilerAction {
+        |resource, context| async {
+            match context.into_inner().reconcile(resource).await {
+                Ok(_) => Ok(ReconcilerAction {
                     requeue_after: None,
-                })
-                .map_err(|err| ReconcileError::ControllerError { source: err })
+                }),
+                Err(err) => Err(ReconcileError::ControllerError { source: err }),
+            }
         },
         |_, _| ReconcilerAction {
             requeue_after: Some(Duration::from_secs(60)),
