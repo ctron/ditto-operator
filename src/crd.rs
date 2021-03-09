@@ -38,7 +38,7 @@ pub struct DittoSpec {
     pub keycloak: Option<Keycloak>,
 
     /// Influence some options of the hosted OpenAPI spec.
-    pub openapi: Option<OpenApi>,
+    pub open_api: Option<OpenApi>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
