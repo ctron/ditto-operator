@@ -260,9 +260,9 @@ impl DittoController {
 
                             // set ports
                             spec.ports = Some(vec![ServicePort {
-                                port: 8090,
+                                port: 80,
                                 name: Some("http".into()),
-                                target_port: Some(IntOrString::String("http-internal".into())),
+                                target_port: Some(IntOrString::String("http-preauth".into())),
                                 ..Default::default()
                             }]);
                         });
@@ -849,16 +849,15 @@ impl DittoController {
         let internal_service_volumes = vec![
             nginx::Volume::empty_dir("internal-cache", "/var/cache/nginx"),
             nginx::Volume::empty_dir("internal-run", "/run/nginx"),
-            nginx::Volume::empty_dir("internal-conf", "/etc/nginx/nginx.conf")
-                .with_sub_path("nginx.conf"),
+            nginx::Volume::empty_dir("internal-conf", "/etc/nginx"),
             nginx::Volume::configmap(
                 "internal-template",
-                "/etc/nginx/tpl",
+                "/etc/init/tpl",
                 prefix.clone() + "-nginx-preauth-tpl",
             ),
             nginx::Volume::secret(
                 "internal-auth",
-                "/etc/nginx/secrets",
+                "/etc/init/secrets",
                 prefix + "-preauth-secret",
             ),
         ];
@@ -878,23 +877,25 @@ impl DittoController {
                                 "sh",
                                 "-ec",
                                 r#"
-envsubst '${HOSTNAME}' < /etc/nginx/tpl/nginx.conf.template > /writable-conf/nginx.conf
+cp -rv /etc/nginx/* /writable-conf/
 
-cat /etc/nginx/secrets/username > /writable-conf/nginx.htpasswd
+envsubst '${HOSTNAME}' < /etc/init/tpl/nginx.conf.template > /writable-conf/nginx.conf
+
+cat /etc/init/secrets/username > /writable-conf/nginx.htpasswd
 echo -n ":" >> /writable-conf/nginx.htpasswd
-openssl passwd -apr1 -in /etc/nginx/secrets/password >> /writable-conf/nginx.htpasswd 
+openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpasswd 
 "#,
                             ]);
                             container.args = None;
 
                             container.apply_volume_mount_simple(
                                 "internal-template",
-                                "/etc/nginx/tpl",
+                                "/etc/init/tpl",
                                 true,
                             )?;
                             container.apply_volume_mount_simple(
                                 "internal-auth",
-                                "/etc/nginx/secrets",
+                                "/etc/init/secrets",
                                 true,
                             )?;
                             container.apply_volume_mount_simple(
@@ -920,9 +921,9 @@ openssl passwd -apr1 -in /etc/nginx/secrets/password >> /writable-conf/nginx.htp
                 container.command = None;
 
                 container.add_env_from_field_path("HOSTNAME", "status.podIP")?;
-                container.add_port("http", 8090, None)?;
+                container.add_port("http-preauth", 8090, None)?;
 
-                Self::default_nginx_probes(&mut container);
+                Self::default_nginx_probes("http-preauth", &mut container);
 
                 Ok(())
             })?;
@@ -967,6 +968,8 @@ openssl passwd -apr1 -in /etc/nginx/secrets/password >> /writable-conf/nginx.htp
 
             let pre_auth = internal_service || ditto.spec.keycloak.is_none();
             container.add_env("ENABLE_PRE_AUTHENTICATION", pre_auth.to_string())?;
+            // deprecated variable
+            container.drop_env("ENABLE_DUMMY_AUTH");
 
             container.add_env(
                 "DEVOPS_SECURE_STATUS",
@@ -1226,7 +1229,7 @@ openssl passwd -apr1 -in /etc/nginx/secrets/password >> /writable-conf/nginx.htp
 
                 container.add_port("http", 8080, None)?;
 
-                Self::default_nginx_probes(&mut container);
+                Self::default_nginx_probes("http", &mut container);
 
                 Ok(())
             })?;
@@ -1486,26 +1489,26 @@ openssl passwd -apr1 -in /etc/nginx/secrets/password >> /writable-conf/nginx.htp
         ]
     }
 
-    fn default_nginx_probes(container: &mut Container) {
+    fn default_nginx_probes(port: &str, container: &mut Container) {
         container.readiness_probe = Some(Probe {
-            initial_delay_seconds: Some(10),
-            period_seconds: Some(10),
+            initial_delay_seconds: Some(2),
+            period_seconds: Some(5),
             timeout_seconds: Some(1),
             failure_threshold: Some(3),
             http_get: Some(HTTPGetAction {
-                port: IntOrString::String("http".to_string()),
+                port: IntOrString::String(port.to_string()),
                 path: Some("/".to_string()),
                 ..Default::default()
             }),
             ..Default::default()
         });
         container.liveness_probe = Some(Probe {
-            initial_delay_seconds: Some(10),
-            period_seconds: Some(10),
+            initial_delay_seconds: Some(2),
+            period_seconds: Some(5),
             timeout_seconds: Some(3),
             failure_threshold: Some(5),
             http_get: Some(HTTPGetAction {
-                port: IntOrString::String("http".to_string()),
+                port: IntOrString::String(port.to_string()),
                 path: Some("/".to_string()),
                 ..Default::default()
             }),
