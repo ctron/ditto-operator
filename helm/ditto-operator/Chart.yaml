@@ -16,7 +16,7 @@ version: 0.2.0
 # incremented each time you make changes to the application.
 appVersion: 0.3.0
 
-kubeVersion: ">= 1.14.0"
+kubeVersion: ">= 1.16.0"
 
 maintainers:
   - name: ctron
