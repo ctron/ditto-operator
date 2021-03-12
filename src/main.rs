@@ -16,6 +16,7 @@
 mod controller;
 mod crd;
 mod data;
+mod nginx;
 
 use crate::controller::DittoController;
 use crate::crd::Ditto;

@@ -28,7 +28,6 @@ use serde::{Deserialize, Serialize};
 #[serde(default, rename_all = "camelCase")]
 pub struct DittoSpec {
     pub mongo_db: MongoDb,
-    pub enable_dummy_auth: bool,
     pub devops_secure_status: bool,
     /// set the "false" to prevent creating the default "ditto" user.
     pub create_default_user: Option<bool>,
@@ -39,6 +38,20 @@ pub struct DittoSpec {
 
     /// Influence some options of the hosted OpenAPI spec.
     pub open_api: Option<OpenApi>,
+
+    // Configure an internal service.
+    pub internal_service: Option<InternalService>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InternalService {
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

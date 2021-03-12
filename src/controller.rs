@@ -10,10 +10,12 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-use crate::data::{openapi_v1, openapi_v2, ApiOptions};
 use crate::{
     crd::{Ditto, DittoStatus, Keycloak},
-    data,
+    data::{
+        self, {openapi_v1, openapi_v2, ApiOptions},
+    },
+    nginx,
 };
 use anyhow::{anyhow, Result};
 use k8s_openapi::{
@@ -34,6 +36,8 @@ use kube::{
 };
 use log::debug;
 use openshift_openapi::api::route::v1::{Route, RoutePort};
+use operator_framework::install::container::{ApplyVolumeMount, RemoveContainer};
+use operator_framework::install::Delete;
 use operator_framework::{
     install::{
         config::{AppendBinary, AppendString},
@@ -41,7 +45,7 @@ use operator_framework::{
             ApplyContainer, ApplyEnvironmentVariable, ApplyPort, SetArgs, SetCommand, SetResources,
         },
         meta::OwnedBy,
-        DeleteOptionally, KubeReader,
+        KubeReader,
     },
     process::create_or_update,
     tracker::{ConfigTracker, Trackable},
@@ -68,6 +72,7 @@ pub const DITTO_REGISTRY: &str = "docker.io/eclipse";
 pub const DITTO_VERSION: &str = "1.5.0";
 pub const KUBERNETES_LABEL_COMPONENT: &str = "app.kubernetes.io/component";
 pub const OPENSHIFT_ANNOTATION_CONNECT: &str = "app.openshift.io/connects-to";
+pub const NGINX_IMAGE: &str = "docker.io/nginx:mainline";
 
 impl DittoController {
     pub fn new(namespace: &str, client: Client, has_openshift: bool) -> Self {
@@ -155,6 +160,7 @@ impl DittoController {
 
         let ditto_tracker = &mut ConfigTracker::new();
         let mut gateway_tracker = &mut ConfigTracker::new();
+        let mut nginx_tracker = &mut ConfigTracker::new();
 
         create_or_update(
             &self.secrets,
@@ -180,6 +186,120 @@ impl DittoController {
             },
         )
         .await?;
+
+        // handle the ditto internal service
+        let internal_service = {
+            // if we want internal ingress, we create a secret
+            let service_name = prefix.clone() + "-preauth";
+            let secret_name = prefix.clone() + "-preauth-secret";
+            let cm_name = prefix.clone() + "-nginx-preauth-tpl";
+
+            if let Some(internal) = &ditto.spec.internal_service {
+                // create credentials for internal service
+
+                create_or_update(
+                    &self.secrets,
+                    Some(&namespace),
+                    secret_name.clone(),
+                    |mut secret| {
+                        if secret.metadata.creation_timestamp.is_none() {
+                            // we only take ownership when we create the secret ourselves
+                            secret.owned_by_controller(&ditto)?;
+                        }
+
+                        match &internal.username {
+                            // provided information
+                            Some(username) => {
+                                secret.append_string("username", username);
+                            }
+                            // generate initially
+                            None => {
+                                secret.init_string("username", "ditto");
+                            }
+                        }
+
+                        match &internal.password {
+                            // provided information
+                            Some(password) => {
+                                secret.append_string("password", password);
+                            }
+                            // generate initially
+                            None => {
+                                secret.init_string_from("password", || {
+                                    thread_rng()
+                                        .sample_iter(&Alphanumeric)
+                                        .take(32)
+                                        .map(char::from)
+                                        .collect::<String>()
+                                });
+                            }
+                        }
+
+                        secret.track_with(gateway_tracker);
+
+                        Ok(secret)
+                    },
+                )
+                .await?;
+
+                // create internal service
+
+                create_or_update(
+                    &self.services,
+                    Some(&namespace),
+                    service_name,
+                    |mut service| {
+                        service.owned_by_controller(&ditto)?;
+
+                        service.spec.use_or_create(|spec| {
+                            // set labels
+
+                            let mut labels = BTreeMap::new();
+                            labels.extend(self.service_selector("gateway", &ditto));
+                            spec.selector = Some(labels);
+
+                            // set ports
+                            spec.ports = Some(vec![ServicePort {
+                                port: 8090,
+                                name: Some("http".into()),
+                                target_port: Some(IntOrString::String("http-internal".into())),
+                                ..Default::default()
+                            }]);
+                        });
+
+                        Ok(service)
+                    },
+                )
+                .await?;
+
+                // create the configmap
+
+                create_or_update(&self.configmaps, Some(&namespace), cm_name, |mut cm| {
+                    cm.owned_by_controller(&ditto)?;
+                    cm.append_string("nginx.conf.template", data::nginx_conf_preauth());
+                    cm.track_with(&mut gateway_tracker);
+                    Ok(cm)
+                })
+                .await?;
+
+                true
+            } else {
+                // delete all internal service resources
+                self.secrets
+                    .delete_conditionally(&secret_name, |secret| {
+                        secret.is_owned_by_controller(&ditto)
+                    })
+                    .await?;
+                self.configmaps
+                    .delete_optionally(&cm_name, &Default::default())
+                    .await?;
+                self.services
+                    .delete_optionally(&service_name, &Default::default())
+                    .await?;
+
+                false
+            }
+        };
 
         let reader = KubeReader::new(&self.configmaps, &self.secrets);
         let credentials = match (&ditto.spec.mongo_db.username, &ditto.spec.mongo_db.password) {
@@ -322,7 +442,7 @@ impl DittoController {
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-gateway",
-            |obj| self.reconcile_gateway_deployment(&ditto, obj, gateway_tracker),
+            |obj| self.reconcile_gateway_deployment(&ditto, obj, gateway_tracker, internal_service),
         )
         .await?;
 
@@ -476,8 +596,6 @@ impl DittoController {
         )
         .await?;
 
-        let mut nginx_tracker = &mut ConfigTracker::new();
-
         create_or_update(
             &self.configmaps,
             Some(&namespace),
@@ -525,7 +643,7 @@ impl DittoController {
             create_or_update(
                 &self.configmaps,
                 Some(&namespace),
-                prefix.clone() + "-nginx-conf",
+                prefix.clone() + "-nginx-htpasswd",
                 |mut cm| {
                     cm.owned_by_controller(&ditto)?;
                     if ditto.spec.create_default_user.unwrap_or(true) {
@@ -666,6 +784,7 @@ impl DittoController {
         ditto: &Ditto,
         deployment: Deployment,
         config_tracker: &ConfigTracker,
+        internal_service: bool,
     ) -> Result<Deployment> {
         let prefix = ditto.name();
 
@@ -722,13 +841,113 @@ impl DittoController {
                 Ok(())
             })?;
         } else {
-            deployment.spec.use_or_create(|spec| {
-                spec.template.spec.use_or_create(|pod_spec| {
+            deployment.remove_container_by_name("oauth-proxy");
+        }
+
+        // internal service - pre-auth
+
+        let internal_service_volumes = vec![
+            nginx::Volume::empty_dir("internal-cache", "/var/cache/nginx"),
+            nginx::Volume::empty_dir("internal-run", "/run/nginx"),
+            nginx::Volume::empty_dir("internal-conf", "/etc/nginx/nginx.conf")
+                .with_sub_path("nginx.conf"),
+            nginx::Volume::configmap(
+                "internal-template",
+                "/etc/nginx/tpl",
+                prefix.clone() + "-nginx-preauth-tpl",
+            ),
+            nginx::Volume::secret(
+                "internal-auth",
+                "/etc/nginx/secrets",
+                prefix + "-preauth-secret",
+            ),
+        ];
+
+        // handle the internal (pre-auth) service
+        if internal_service {
+            deployment.spec.use_or_create_err(|spec| {
+                spec.template.spec.use_or_create_err(|pod_spec| {
+                    // we use an init container to write out the generated nginx.conf
+                    // and the htpasswd, created from the secret
+
+                    pod_spec.init_containers.apply_container(
+                        "internal-init",
+                        |mut container| {
+                            container.image = Some(NGINX_IMAGE.into());
+                            container.command(vec![
+                                "sh",
+                                "-ec",
+                                r#"
+envsubst '${HOSTNAME}' < /etc/nginx/tpl/nginx.conf.template > /writable-conf/nginx.conf
+
+cat /etc/nginx/secrets/username > /writable-conf/nginx.htpasswd
+echo -n ":" >> /writable-conf/nginx.htpasswd
+openssl passwd -apr1 -in /etc/nginx/secrets/password >> /writable-conf/nginx.htpasswd 
+"#,
+                            ]);
+                            container.args = None;
+
+                            container.apply_volume_mount_simple(
+                                "internal-template",
+                                "/etc/nginx/tpl",
+                                true,
+                            )?;
+                            container.apply_volume_mount_simple(
+                                "internal-auth",
+                                "/etc/nginx/secrets",
+                                true,
+                            )?;
+                            container.apply_volume_mount_simple(
+                                "internal-conf",
+                                "/writable-conf",
+                                false,
+                            )?;
+
+                            Ok(())
+                        },
+                    )?;
+
+                    Ok(())
+                })?;
+
+                Ok(())
+            })?;
+
+            deployment.apply_container("internal-proxy", |mut container| {
+                container.image = Some(NGINX_IMAGE.into());
+
+                container.args = None;
+                container.command = None;
+
+                container.add_env_from_field_path("HOSTNAME", "status.podIP")?;
+                container.add_port("http", 8090, None)?;
+
+                Self::default_nginx_probes(&mut container);
+
+                Ok(())
+            })?;
+            deployment.spec.use_or_create_err(|spec| {
+                nginx::apply_volumes(
+                    &internal_service_volumes,
+                    &mut spec.template,
+                    "internal-proxy",
+                )?;
+                Ok(())
+            })?;
+        } else {
+            deployment.spec.use_or_create_err(|spec| {
+                spec.template.spec.use_or_create_err(|pod_spec| {
                     pod_spec
-                        .containers
-                        .retain(|container| container.name != "oauth-proxy");
-                });
-            });
+                        .init_containers
+                        .remove_container_by_name("internal-init");
+                    Ok(())
+                })?;
+                Ok(())
+            })?;
+            deployment.remove_container_by_name("internal-proxy");
+            if let Some(spec) = &mut deployment.spec {
+                nginx::drop_volumes(&internal_service_volumes, &mut spec.template)?;
+            }
         }
 
         deployment.apply_container("service", |container| {
@@ -746,10 +965,9 @@ impl DittoController {
                  })?;
             }
 
-            container.add_env(
-                "ENABLE_DUMMY_AUTH",
-                ditto.spec.enable_dummy_auth.to_string(),
-            )?;
+            let pre_auth = internal_service || ditto.spec.keycloak.is_none();
+            container.add_env("ENABLE_PRE_AUTHENTICATION", pre_auth.to_string())?;
+
             container.add_env(
                 "DEVOPS_SECURE_STATUS",
                 ditto.spec.devops_secure_status.to_string(),
@@ -970,100 +1188,45 @@ impl DittoController {
                 });
             });
 
-            spec.template.spec.use_or_create_err(|template_spec| {
-                let mut volumes = vec![];
+            let volumes = vec![
+                nginx::Volume::empty_dir("nginx-cache", "/var/cache/nginx"),
+                nginx::Volume::empty_dir("nginx-run", "/run/nginx"),
+                nginx::Volume::configmap(
+                    "nginx-conf",
+                    "/etc/nginx/nginx.conf",
+                    prefix.clone() + "-nginx-conf",
+                )
+                .with_sub_path("nginx.conf"),
+                nginx::Volume::configmap(
+                    "nginx-htpasswd",
+                    "/etc/nginx/nginx.htpasswd",
+                    prefix.clone() + "-nginx-htpasswd",
+                )
+                .with_sub_path("nginx.htpasswd"),
+                nginx::Volume::configmap(
+                    "nginx-cors",
+                    "/etc/nginx/nginx-cors.conf",
+                    prefix.clone() + "-nginx-cors",
+                )
+                .with_sub_path("nginx-cors.conf"),
+                nginx::Volume::configmap(
+                    "nginx-data",
+                    "/etc/nginx/html",
+                    prefix.clone() + "-nginx-data",
+                ),
+            ];
 
-                for n in &[
-                    ("conf", "nginx-conf"),
-                    ("htpasswd", "nginx-htpasswd"),
-                    ("cors", "nginx-cors"),
-                ] {
-                    volumes.push(Volume {
-                        name: format!("nginx-{}", n.0),
-                        config_map: Some(ConfigMapVolumeSource {
-                            name: Some(prefix.clone() + "-" + n.1),
-                            ..Default::default()
-                        }),
-                        ..Default::default()
-                    });
-                }
-                volumes.push(Volume {
-                    name: "nginx-data".into(),
-                    config_map: Some(ConfigMapVolumeSource {
-                        name: Some(prefix.clone() + "-nginx-data"),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                });
-                for n in &["cache", "run"] {
-                    volumes.push(Volume {
-                        name: format!("nginx-{}", n),
-                        empty_dir: Some(Default::default()),
-                        ..Default::default()
-                    });
-                }
-                template_spec.volumes = Some(volumes);
-                Ok(())
-            })?;
+            nginx::apply_volumes(&volumes, &mut spec.template, "nginx")?;
 
-            spec.template.apply_container("nginx", |container| {
-                container.image = Some("docker.io/nginx:mainline-alpine".into());
+            spec.template.apply_container("nginx", |mut container| {
+                container.image = Some(NGINX_IMAGE.into());
 
                 container.args = None;
                 container.command = None;
 
                 container.add_port("http", 8080, None)?;
 
-                container.readiness_probe = Some(Probe {
-                    initial_delay_seconds: Some(10),
-                    period_seconds: Some(10),
-                    timeout_seconds: Some(1),
-                    failure_threshold: Some(3),
-                    http_get: Some(HTTPGetAction {
-                        port: IntOrString::String("http".to_string()),
-                        path: Some("/".to_string()),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                });
-                container.liveness_probe = Some(Probe {
-                    initial_delay_seconds: Some(10),
-                    period_seconds: Some(10),
-                    timeout_seconds: Some(3),
-                    failure_threshold: Some(5),
-                    http_get: Some(HTTPGetAction {
-                        port: IntOrString::String("http".to_string()),
-                        path: Some("/".to_string()),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                });
-
-                let mut volume_mounts = vec![];
-                for n in &[
-                    ("conf", "/etc/nginx/nginx.conf", Some("nginx.conf")),
-                    (
-                        "htpasswd",
-                        "/etc/nginx/nginx.htpasswd",
-                        Some("nginx.htpasswd"),
-                    ),
-                    (
-                        "cors",
-                        "/etc/nginx/nginx-cors.conf",
-                        Some("nginx-cors.conf"),
-                    ),
-                    ("data", "/etc/nginx/html", None),
-                    ("cache", "/var/cache/nginx", None),
-                    ("run", "/run/nginx", None),
-                ] {
-                    volume_mounts.push(VolumeMount {
-                        name: format!("nginx-{}", n.0),
-                        mount_path: n.1.to_string(),
-                        sub_path: n.2.map(|s| s.to_string()),
-                        ..Default::default()
-                    });
-                }
-                container.volume_mounts = Some(volume_mounts);
+                Self::default_nginx_probes(&mut container);
 
                 Ok(())
             })?;
@@ -1321,5 +1484,32 @@ impl DittoController {
                 format!("{}-{}", component, ditto.name()),
             ),
         ]
+    }
+
+    fn default_nginx_probes(container: &mut Container) {
+        container.readiness_probe = Some(Probe {
+            initial_delay_seconds: Some(10),
+            period_seconds: Some(10),
+            timeout_seconds: Some(1),
+            failure_threshold: Some(3),
+            http_get: Some(HTTPGetAction {
+                port: IntOrString::String("http".to_string()),
+                path: Some("/".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        container.liveness_probe = Some(Probe {
+            initial_delay_seconds: Some(10),
+            period_seconds: Some(10),
+            timeout_seconds: Some(3),
+            failure_threshold: Some(5),
+            http_get: Some(HTTPGetAction {
+                port: IntOrString::String("http".to_string()),
+                path: Some("/".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
     }
 }
