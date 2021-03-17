@@ -523,16 +523,11 @@ impl DittoController {
                     labels.extend(self.service_selector("gateway", &ditto));
                     spec.selector = Some(labels);
 
-                    let target_port = match ditto.spec.keycloak {
-                        Some(_) => "oauth",
-                        None => "http",
-                    };
-
                     // set ports
                     spec.ports = Some(vec![ServicePort {
                         port: 8080,
                         name: Some("http".into()),
-                        target_port: Some(IntOrString::String(target_port.into())),
+                        target_port: Some(IntOrString::String("http".into())),
                         ..Default::default()
                     }]);
                 });
@@ -555,11 +550,16 @@ impl DittoController {
                     labels.extend(self.service_selector("nginx", &ditto));
                     spec.selector = Some(labels);
 
+                    let target_port = match ditto.spec.keycloak {
+                        Some(_) => "oauth",
+                        None => "http",
+                    };
+
                     // set ports
                     spec.ports = Some(vec![ServicePort {
                         port: 8080,
                         name: Some("http".into()),
-                        target_port: Some(IntOrString::String("http".into())),
+                        target_port: Some(IntOrString::String(target_port.into())),
                         ..Default::default()
                     }]);
                 });
@@ -676,8 +676,15 @@ impl DittoController {
             Some(&namespace),
             prefix.clone() + "-nginx-data",
             |mut cm| {
-                cm.owned_by_controller(&ditto)?;
-                cm.append_string("index.html", include_str!("resources/index.html"));
+                if cm.metadata.creation_timestamp.is_none() {
+                    // only take ownership if we created the config map
+                    cm.owned_by_controller(&ditto)?;
+                }
+                // owned or not, we inject additional content to the configmap
+                cm.append_string(
+                    "index.default.html",
+                    data::nginx_default(ditto.spec.keycloak.is_some()),
+                );
                 cm.append_string("ditto-up.svg", include_str!("resources/ditto-up.svg"));
                 cm.append_string("ditto-down.svg", include_str!("resources/ditto-down.svg"));
                 cm.append_string(
@@ -798,51 +805,8 @@ impl DittoController {
             |_| {},
         )?;
 
-        if let Some(keycloak) = &ditto.spec.keycloak {
-            deployment.apply_container("oauth-proxy", |container| {
-                container.image = Some("quay.io/oauth2-proxy/oauth2-proxy:v7.0.1".into());
-                container.image_pull_policy = Some("IfNotPresent".into());
-
-                container.add_env_from_field_path("HOSTNAME", "status.podIP")?;
-                keycloak
-                    .client_id
-                    .apply_to_env(container, "OAUTH2_PROXY_CLIENT_ID");
-                keycloak
-                    .client_secret
-                    .apply_to_env(container, "OAUTH2_PROXY_CLIENT_SECRET");
-
-                let mut args: Vec<_> = vec![
-                    "--email-domain=*".to_string(),
-                    "--scope=openid".to_string(),
-                    "--reverse-proxy=true".to_string(),
-                    "--http-address=0.0.0.0:4180".to_string(),
-                    "--upstream=http://$(HOSTNAME):8080/".to_string(),
-                    "--provider=keycloak".to_string(),
-                    Self::keycloak_url_arg("--login-url", &keycloak, "/auth"),
-                    Self::keycloak_url_arg("--redeem-url", &keycloak, "/token"),
-                    Self::keycloak_url_arg("--profile-url", &keycloak, "/userinfo"),
-                    Self::keycloak_url_arg("--validate-url", &keycloak, "/userinfo"),
-                ];
-
-                for group in &keycloak.groups {
-                    args.push(format!("--allowed-group={}", group));
-                }
-
-                container.args = Some(args);
-
-                container.add_env_from_secret(
-                    "OAUTH2_PROXY_COOKIE_SECRET",
-                    prefix.clone() + "-oauth",
-                    "cookie.secret",
-                )?;
-
-                container.add_port("oauth", 4180, None)?;
-
-                Ok(())
-            })?;
-        } else {
-            deployment.remove_container_by_name("oauth-proxy");
-        }
+        // that was a mistake, it belongs to the nginx
+        deployment.remove_container_by_name("oauth-proxy");
 
         // internal service - pre-auth
 
@@ -1183,6 +1147,52 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
         );
 
         deployment.owned_by_controller(ditto)?;
+
+        if let Some(keycloak) = &ditto.spec.keycloak {
+            deployment.apply_container("oauth-proxy", |container| {
+                container.image = Some("quay.io/oauth2-proxy/oauth2-proxy:v7.0.1".into());
+                container.image_pull_policy = Some("IfNotPresent".into());
+
+                container.add_env_from_field_path("HOSTNAME", "status.podIP")?;
+                keycloak
+                    .client_id
+                    .apply_to_env(container, "OAUTH2_PROXY_CLIENT_ID");
+                keycloak
+                    .client_secret
+                    .apply_to_env(container, "OAUTH2_PROXY_CLIENT_SECRET");
+
+                let mut args: Vec<_> = vec![
+                    "--email-domain=*".to_string(),
+                    "--scope=openid".to_string(),
+                    "--reverse-proxy=true".to_string(),
+                    "--http-address=0.0.0.0:4180".to_string(),
+                    "--upstream=http://$(HOSTNAME):8080/".to_string(),
+                    "--provider=keycloak".to_string(),
+                    Self::keycloak_url_arg("--login-url", &keycloak, "/auth"),
+                    Self::keycloak_url_arg("--redeem-url", &keycloak, "/token"),
+                    Self::keycloak_url_arg("--profile-url", &keycloak, "/userinfo"),
+                    Self::keycloak_url_arg("--validate-url", &keycloak, "/userinfo"),
+                ];
+
+                for group in &keycloak.groups {
+                    args.push(format!("--allowed-group={}", group));
+                }
+
+                container.args = Some(args);
+
+                container.add_env_from_secret(
+                    "OAUTH2_PROXY_COOKIE_SECRET",
+                    prefix.clone() + "-oauth",
+                    "cookie.secret",
+                )?;
+
+                container.add_port("oauth", 4180, None)?;
+
+                Ok(())
+            })?;
+        } else {
+            deployment.remove_container_by_name("oauth-proxy");
+        }
 
         deployment.spec.use_or_create_err(|spec| {
             spec.template.metadata.use_or_create(|metadata| {

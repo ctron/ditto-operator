@@ -81,7 +81,7 @@ http {
     server_name localhost;
 
     location / {
-      index index.html;
+      index index.html index.default.html;
     }
 
 "#;
@@ -297,4 +297,24 @@ http {
 "#;
 
     result
+}
+
+/// Provide the default index.html file
+pub fn nginx_default(oauth: bool) -> String {
+    let html = include_str!("../resources/index.html");
+
+    let login = match oauth {
+        true => {
+            r#"<p>
+                Try out the HTTP APIs by logging in to Keycloak using the <code>Authorize</code> button in the Swagger UI, or by providing a valid OAuth token to your requests.
+            </p>"#
+        }
+        false => {
+            r#"<p>
+                Try out the HTTP APIs by using username "ditto" and password "ditto" when asked for by your browser.
+            </p>"#
+        }
+    };
+
+    html.replace("@@LOGIN@@", login)
 }

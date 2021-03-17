@@ -39,7 +39,7 @@ pub struct DittoSpec {
     /// Influence some options of the hosted OpenAPI spec.
     pub open_api: Option<OpenApi>,
 
-    // Configure an internal service.
+    /// Configure an internal service.
     pub internal_service: Option<InternalService>,
 }
 
