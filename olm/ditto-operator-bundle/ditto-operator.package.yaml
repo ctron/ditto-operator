@@ -1,5 +1,5 @@
 packageName: ditto-operator
 channels:
   - name: alpha
-    currentCSV: ditto-operator.v0.2.1
+    currentCSV: ditto-operator.v0.2.2
 defaultChannel: alpha
