@@ -5,8 +5,8 @@ metadata:
     capabilities: Seamless Upgrades
     categories: "Streaming & Messaging"
     certified: "false"
-    containerImage: docker.io/ctron/ditto-operator:0.2.1
-    createdAt: "2020-12-10T17:47:00Z"
+    containerImage: docker.io/ctron/ditto-operator:0.3.1
+    createdAt: "2021-09-22T13:54:00Z"
     description: Eclipse Ditto provides a Digital Twin platform. A digital twin is a virtual, cloud based, representation of his real world counterpart.
     repository: https://github.com/ctron/ditto-operator
     support: Jens Reimann
@@ -25,7 +25,7 @@ metadata:
           }
         }
       ]
-  name: ditto-operator.v0.2.2
+  name: ditto-operator.v0.3.1
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -89,7 +89,7 @@ spec:
                         value: info
                       - name: HAS_OPENSHIFT
                         value: "false"
-                    image: docker.io/ctron/ditto-operator:0.2.1
+                    image: docker.io/ctron/ditto-operator:0.3.1
                     imagePullPolicy: Always
                     name: ditto-operator
                     resources: {}
@@ -137,5 +137,5 @@ spec:
   minKubeVersion: 1.16.0
   provider:
     name: Jens Reimann
-  version: 0.2.2
-  replaces: ditto-operator.v0.2.1
+  version: 0.3.1
+  replaces: ditto-operator.v0.2.0
