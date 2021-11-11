@@ -22,6 +22,8 @@ spec:
   selector:
     matchLabels:
       {{- include "ditto-operator.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: Recreate
   template:
     metadata:
       labels:
@@ -43,7 +45,13 @@ spec:
           {{- else }}
           image: {{ .Values.image.repository }}:{{ include "ditto-operator.imageTag" . }}
           {{- end }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+          {{- with .Values.image.pullPolicy }}
+          imagePullPolicy: {{ . }}
+          {{- else }}
+          imagePullPolicy: {{ if eq (include "ditto-operator.imageTag" .) "latest" -}}Always{{- else -}}IfNotPresent{{- end}}
+          {{- end }}
+
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           env:
