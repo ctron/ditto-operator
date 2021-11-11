@@ -177,15 +177,55 @@ spec:
                   type: object
                 mongoDb:
                   default:
-                    host: ""
+                    host: mongodb
                     port: 27017
                   properties:
                     database:
                       description: "The optional database name used to connect, defaults to \"ditto\"."
                       nullable: true
-                      type: string
+                      oneOf:
+                        - required:
+                            - value
+                        - required:
+                            - secret
+                        - required:
+                            - configMap
+                      properties:
+                        configMap:
+                          description: Selects a key from a ConfigMap.
+                          properties:
+                            key:
+                              description: The key to select.
+                              type: string
+                            name:
+                              description: "Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names"
+                              type: string
+                            optional:
+                              description: Specify whether the ConfigMap or its key must be defined
+                              type: boolean
+                          required:
+                            - key
+                          type: object
+                        secret:
+                          description: SecretKeySelector selects a key of a Secret.
+                          properties:
+                            key:
+                              description: The key of the secret to select from.  Must be a valid secret key.
+                              type: string
+                            name:
+                              description: "Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names"
+                              type: string
+                            optional:
+                              description: Specify whether the Secret or its key must be defined
+                              type: boolean
+                          required:
+                            - key
+                          type: object
+                        value:
+                          type: string
+                      type: object
                     host:
-                      default: ""
+                      default: mongodb
                       description: The hostname of the MongoDB instance.
                       type: string
                     password:
@@ -241,7 +281,47 @@ spec:
                     username:
                       description: The username used to connect to the MongoDB instance.
                       nullable: true
-                      type: string
+                      oneOf:
+                        - required:
+                            - value
+                        - required:
+                            - secret
+                        - required:
+                            - configMap
+                      properties:
+                        configMap:
+                          description: Selects a key from a ConfigMap.
+                          properties:
+                            key:
+                              description: The key to select.
+                              type: string
+                            name:
+                              description: "Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names"
+                              type: string
+                            optional:
+                              description: Specify whether the ConfigMap or its key must be defined
+                              type: boolean
+                          required:
+                            - key
+                          type: object
+                        secret:
+                          description: SecretKeySelector selects a key of a Secret.
+                          properties:
+                            key:
+                              description: The key of the secret to select from.  Must be a valid secret key.
+                              type: string
+                            name:
+                              description: "Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names"
+                              type: string
+                            optional:
+                              description: Specify whether the Secret or its key must be defined
+                              type: boolean
+                          required:
+                            - key
+                          type: object
+                        value:
+                          type: string
+                      type: object
                   type: object
                 openApi:
                   description: Influence some options of the hosted OpenAPI spec.
