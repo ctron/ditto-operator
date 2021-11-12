@@ -28,12 +28,14 @@ spec:
             spec:
               properties:
                 createDefaultUser:
-                  description: "Create the default \"ditto\" user when initially deploying."
+                  description: "Create the default \"ditto\" user when initially deploying.\n\nThis has no effect when using OAuth2."
                   nullable: true
                   type: boolean
                 devopsSecureStatus:
-                  default: false
                   description: Secure the devops status information.
+                  type: boolean
+                disableInfraProxy:
+                  description: "Don't expose infra endpoints"
                   type: boolean
                 ingress:
                   description: "Configure ingress options\n\nIf the field is missing, no ingress resource is being created."
@@ -342,7 +344,6 @@ spec:
                   nullable: true
                   properties:
                     disable:
-                      default: false
                       type: boolean
                     image:
                       nullable: true

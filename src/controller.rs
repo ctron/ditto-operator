@@ -580,57 +580,78 @@ impl DittoController {
         )
         .await?;
 
-        create_or_update(
-            &self.services,
-            Some(&namespace),
-            prefix.clone() + "-swaggerui",
-            |mut service| {
-                service.owned_by_controller(&ditto)?;
-                service.spec.use_or_create(|spec| {
-                    // set labels
+        if self.want_swagger(&ditto) {
+            create_or_update(
+                &self.services,
+                Some(&namespace),
+                prefix.clone() + "-swaggerui",
+                |mut service| {
+                    service.owned_by_controller(&ditto)?;
+                    service.spec.use_or_create(|spec| {
+                        // set labels
 
-                    let mut labels = BTreeMap::new();
-                    labels.extend(self.service_selector("swaggerui", &ditto));
-                    spec.selector = Some(labels);
+                        let mut labels = BTreeMap::new();
+                        labels.extend(self.service_selector("swaggerui", &ditto));
+                        spec.selector = Some(labels);
 
-                    // set ports
-                    spec.ports = Some(vec![ServicePort {
-                        port: 8080,
-                        name: Some("http".into()),
-                        target_port: Some(IntOrString::String("http".into())),
-                        ..Default::default()
-                    }]);
-                });
+                        // set ports
+                        spec.ports = Some(vec![ServicePort {
+                            port: 8080,
+                            name: Some("http".into()),
+                            target_port: Some(IntOrString::String("http".into())),
+                            ..Default::default()
+                        }]);
+                    });
 
-                Ok::<_, anyhow::Error>(service)
-            },
-        )
-        .await?;
+                    Ok::<_, anyhow::Error>(service)
+                },
+            )
+            .await?;
 
-        create_or_update(
-            &self.configmaps,
-            Some(&namespace),
-            prefix.clone() + "-swaggerui-api",
-            |mut cm| {
-                let keycloak = ditto.spec.keycloak.as_ref();
-                let openapi = ditto.spec.open_api.as_ref();
-                let oauth_auth_url = keycloak.map(|keycloak| Self::keycloak_url(keycloak, "/auth"));
+            create_or_update(
+                &self.configmaps,
+                Some(&namespace),
+                prefix.clone() + "-swaggerui-api",
+                |mut cm| {
+                    let keycloak = ditto.spec.keycloak.as_ref();
+                    let openapi = ditto.spec.open_api.as_ref();
+                    let oauth_auth_url =
+                        keycloak.map(|keycloak| Self::keycloak_url(keycloak, "/auth"));
 
-                let options = ApiOptions {
-                    server_label: openapi.and_then(|o| o.server_label.clone()),
-                    oauth_auth_url,
-                    oauth_label: keycloak.and_then(|k| k.label.clone()),
-                    oauth_description: keycloak.and_then(|k| k.description.clone()),
-                };
+                    let options = ApiOptions {
+                        server_label: openapi.and_then(|o| o.server_label.clone()),
+                        oauth_auth_url,
+                        oauth_label: keycloak.and_then(|k| k.label.clone()),
+                        oauth_description: keycloak.and_then(|k| k.description.clone()),
+                    };
 
-                cm.owned_by_controller(&ditto)?;
-                cm.append_string("ditto-api-v2.yaml", openapi_v2(&options)?);
-                cm.track_with(&mut nginx_tracker);
+                    cm.owned_by_controller(&ditto)?;
+                    cm.append_string("ditto-api-v2.yaml", openapi_v2(&options)?);
+                    cm.track_with(&mut nginx_tracker);
 
-                Ok::<_, anyhow::Error>(cm)
-            },
-        )
-        .await?;
+                    Ok::<_, anyhow::Error>(cm)
+                },
+            )
+            .await?;
+
+            create_or_update(
+                &self.deployments,
+                Some(&namespace),
+                prefix.clone() + "-swaggerui",
+                |obj| self.reconcile_swaggerui_deployment(&ditto, obj),
+            )
+            .await?;
+        } else {
+            self.services
+                .delete_optionally(format!("{}-swaggerui", prefix), &Default::default())
+                .await?;
+            self.configmaps
+                .delete_optionally(format!("{}-swaggerui-api", prefix), &Default::default())
+                .await?;
+            self.deployments
+                .delete_optionally(format!("{}-swaggerui", prefix), &Default::default())
+                .await?;
+        }
 
         create_or_update(
             &self.configmaps,
@@ -640,7 +661,12 @@ impl DittoController {
                 cm.owned_by_controller(&ditto)?;
                 cm.append_string(
                     "nginx.conf",
-                    data::nginx_conf(name, true, ditto.spec.keycloak.is_some()),
+                    data::nginx_conf(
+                        name,
+                        self.want_swagger(&ditto),
+                        ditto.spec.keycloak.is_some(),
+                        !ditto.spec.disable_infra_proxy,
+                    ),
                 );
                 cm.track_with(&mut nginx_tracker);
                 Ok::<_, anyhow::Error>(cm)
@@ -716,14 +742,6 @@ impl DittoController {
                 cm.track_with(&mut nginx_tracker);
                 Ok::<_, anyhow::Error>(cm)
             },
-        )
-        .await?;
-
-        create_or_update(
-            &self.deployments,
-            Some(&namespace),
-            prefix.clone() + "-swaggerui",
-            |obj| self.reconcile_swaggerui_deployment(&ditto, obj),
         )
         .await?;
 
@@ -1590,5 +1608,14 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
             .clone()
             .and_then(|ui| ui.image)
             .unwrap_or_else(|| "docker.io/swaggerapi/swagger-ui:v3.44.1".into())
+    }
+
+    fn want_swagger(&self, ditto: &Ditto) -> bool {
+        !ditto
+            .spec
+            .swagger_ui
+            .as_ref()
+            .map(|ui| ui.disable)
+            .unwrap_or_default()
     }
 }

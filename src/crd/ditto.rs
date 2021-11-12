@@ -34,10 +34,17 @@ use std::collections::BTreeMap;
 #[serde(default, rename_all = "camelCase")]
 pub struct DittoSpec {
     pub mongo_db: MongoDb,
+
+    /// Don't expose infra endpoints
+    #[serde(skip_serializing_if = "is_default")]
+    pub disable_infra_proxy: bool,
+
     /// Secure the devops status information.
     #[serde(skip_serializing_if = "is_default")]
     pub devops_secure_status: bool,
     /// Create the default "ditto" user when initially deploying.
+    ///
+    /// This has no effect when using OAuth2.
     pub create_default_user: Option<bool>,
     /// Allow to override the Ditto image version.
     pub version: Option<String>,
