@@ -82,6 +82,8 @@ async fn main() -> anyhow::Result<()> {
     let dittos: Api<Ditto> = Api::namespaced(client.clone(), &namespace);
     let mut c = Controller::new(dittos, ListParams::default());
 
+    c = c.shutdown_on_signal();
+
     // trigger changes for every configmap and secret, as any of them could be referenced
     let store = c.store();
     c = c.watches(

@@ -10,10 +10,6 @@ pub struct ApiOptions {
     pub oauth_description: Option<String>,
 }
 
-pub fn openapi_v1(options: &ApiOptions) -> Result<String> {
-    openapi_inject(include_str!("../resources/ditto-api-v1.yaml"), options)
-}
-
 pub fn openapi_v2(options: &ApiOptions) -> Result<String> {
     openapi_inject(include_str!("../resources/ditto-api-v2.yaml"), options)
 }
@@ -86,7 +82,7 @@ flows:
         security_schemes.insert(id.into(), sso);
     }
 
-    Ok(serde_yaml::to_string(&api).context("Failed to encode OpenAPI as YAML")?)
+    serde_yaml::to_string(&api).context("Failed to encode OpenAPI as YAML")
 }
 
 #[cfg(test)]
@@ -96,7 +92,7 @@ mod test {
 
     #[test]
     fn test_openapi_v1() {
-        let api = openapi_v1(&ApiOptions {
+        let api = openapi_v2(&ApiOptions {
             oauth_auth_url: Some("https://foo.bar".into()),
             oauth_description: Some("Single sign-on".into()),
             oauth_label: Some("My Service".into()),

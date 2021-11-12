@@ -205,7 +205,7 @@ http {
 
         result += format!(r#"
     # swagger
-    # access API doc on: /apidoc/1 or /apidoc/2
+    # access API doc on: /apidoc/2
     location /apidoc/ {{
       rewrite ^/apidoc/([0-9])$ $http_x_forwarded_proto://$http_host/apidoc/?url=/apidoc/openapi/ditto-api-v$1.yaml redirect;
       proxy_pass                    http://{name}-swaggerui:8080/;

@@ -35,6 +35,7 @@ use std::collections::BTreeMap;
 pub struct DittoSpec {
     pub mongo_db: MongoDb,
     /// Secure the devops status information.
+    #[serde(skip_serializing_if = "is_default")]
     pub devops_secure_status: bool,
     /// Create the default "ditto" user when initially deploying.
     pub create_default_user: Option<bool>,
@@ -45,6 +46,9 @@ pub struct DittoSpec {
 
     /// Influence some options of the hosted OpenAPI spec.
     pub open_api: Option<OpenApi>,
+
+    /// Influence some options of the hosted SwaggerUI.
+    pub swagger_ui: Option<SwaggerUi>,
 
     /// Configure an internal service account.
     pub internal_service: Option<InternalService>,
@@ -80,6 +84,18 @@ pub struct IngressSpec {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct SwaggerUi {
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_default")]
+    pub disable: bool,
+
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct InternalService {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -100,6 +116,15 @@ pub struct Keycloak {
     pub client_secret: ValueOrReference,
 
     #[serde(default)]
+    #[serde(skip_serializing_if = "is_default")]
+    pub disable_proxy: bool,
+
+    /// Allow overriding the redirect URL.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redirect_url: Option<String>,
+
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub groups: Vec<String>,
 
@@ -111,6 +136,10 @@ pub struct Keycloak {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+}
+
+fn is_default<T: Default + Eq>(value: &T) -> bool {
+    *value == T::default()
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]

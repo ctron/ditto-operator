@@ -157,6 +157,8 @@ spec:
                       description: Description of this login option.
                       nullable: true
                       type: string
+                    disableProxy:
+                      type: boolean
                     groups:
                       items:
                         type: string
@@ -166,6 +168,10 @@ spec:
                       nullable: true
                       type: string
                     realm:
+                      type: string
+                    redirectUrl:
+                      description: Allow overriding the redirect URL.
+                      nullable: true
                       type: string
                     url:
                       type: string
@@ -328,6 +334,17 @@ spec:
                   nullable: true
                   properties:
                     serverLabel:
+                      nullable: true
+                      type: string
+                  type: object
+                swaggerUi:
+                  description: Influence some options of the hosted SwaggerUI.
+                  nullable: true
+                  properties:
+                    disable:
+                      default: false
+                      type: boolean
+                    image:
                       nullable: true
                       type: string
                   type: object

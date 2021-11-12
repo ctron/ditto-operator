@@ -13,7 +13,7 @@
 use crate::{
     crd::{Ditto, Keycloak},
     data::{
-        self, {openapi_v1, openapi_v2, ApiOptions},
+        self, {openapi_v2, ApiOptions},
     },
     nginx,
 };
@@ -75,24 +75,24 @@ pub struct DittoController {
 }
 
 pub const DITTO_REGISTRY: &str = "docker.io/eclipse";
-pub const DITTO_VERSION: &str = "1.5.0";
+pub const DITTO_VERSION: &str = "2.1.1";
 pub const KUBERNETES_LABEL_COMPONENT: &str = "app.kubernetes.io/component";
 pub const OPENSHIFT_ANNOTATION_CONNECT: &str = "app.openshift.io/connects-to";
-pub const NGINX_IMAGE: &str = "docker.io/nginx:mainline";
+pub const NGINX_IMAGE: &str = "docker.io/library/nginx:mainline";
 
 impl DittoController {
     pub fn new(namespace: &str, client: Client, has_openshift: bool) -> Self {
         DittoController {
             has_openshift,
             client: client.clone(),
-            deployments: Api::namespaced(client.clone(), &namespace),
-            secrets: Api::namespaced(client.clone(), &namespace),
-            service_accounts: Api::namespaced(client.clone(), &namespace),
-            roles: Api::namespaced(client.clone(), &namespace),
-            role_bindings: Api::namespaced(client.clone(), &namespace),
-            services: Api::namespaced(client.clone(), &namespace),
-            configmaps: Api::namespaced(client.clone(), &namespace),
-            ingress: Api::namespaced(client, &namespace),
+            deployments: Api::namespaced(client.clone(), namespace),
+            secrets: Api::namespaced(client.clone(), namespace),
+            service_accounts: Api::namespaced(client.clone(), namespace),
+            roles: Api::namespaced(client.clone(), namespace),
+            role_bindings: Api::namespaced(client.clone(), namespace),
+            services: Api::namespaced(client.clone(), namespace),
+            configmaps: Api::namespaced(client.clone(), namespace),
+            ingress: Api::namespaced(client, namespace),
         }
     }
 
@@ -561,9 +561,9 @@ impl DittoController {
                     labels.extend(self.service_selector("nginx", &ditto));
                     spec.selector = Some(labels);
 
-                    let target_port = match ditto.spec.keycloak {
-                        Some(_) => "oauth",
-                        None => "http",
+                    let target_port = match &ditto.spec.keycloak {
+                        Some(keycloak) if !keycloak.disable_proxy => "oauth",
+                        _ => "http",
                     };
 
                     // set ports
@@ -624,7 +624,6 @@ impl DittoController {
                 };
 
                 cm.owned_by_controller(&ditto)?;
-                cm.append_string("ditto-api-v1.yaml", openapi_v1(&options)?);
                 cm.append_string("ditto-api-v2.yaml", openapi_v2(&options)?);
                 cm.track_with(&mut nginx_tracker);
 
@@ -699,10 +698,6 @@ impl DittoController {
                 cm.append_string("ditto-up.svg", include_str!("resources/ditto-up.svg"));
                 cm.append_string("ditto-down.svg", include_str!("resources/ditto-down.svg"));
                 cm.append_string(
-                    "ditto-api-v1.yaml",
-                    include_str!("resources/ditto-api-v1.yaml"),
-                );
-                cm.append_string(
                     "ditto-api-v2.yaml",
                     include_str!("resources/ditto-api-v2.yaml"),
                 );
@@ -736,7 +731,7 @@ impl DittoController {
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-nginx",
-            |obj| self.reconcile_nginx_deployment(&ditto, obj, &nginx_tracker),
+            |obj| self.reconcile_nginx_deployment(&ditto, obj, nginx_tracker),
         )
         .await?;
 
@@ -806,7 +801,7 @@ impl DittoController {
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-concierge", &ditto),
+            self.image_name("ditto-concierge", ditto),
             Some("concierge-uri"),
             config_tracker,
             |_| {},
@@ -839,7 +834,7 @@ impl DittoController {
         let mut deployment = self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-gateway", &ditto),
+            self.image_name("ditto-gateway", ditto),
             None,
             config_tracker,
             |_| {},
@@ -960,9 +955,12 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
             if let Some(keycloak) = &ditto.spec.keycloak {
                 let issuer_url = format!("{url}/auth/realms/{realm}", url=keycloak.url, realm=keycloak.realm);
                 container.args.use_or_create(|args| {
-                    // we need to insert this in the front, as `-D` is an argument for the JVM, no the application
+                    // we need to insert this in the front, as `-D` is an argument for the JVM, not the application
                     if let Some(url) = issuer_url.strip_prefix("https://") {
-                        args.insert(0, format!("-Dditto.gateway.authentication.oauth.openid-connect-issuers.keycloak.issuer={}", url));    
+                        args.insert(0, format!("-Dditto.gateway.authentication.oauth.openid-connect-issuers.keycloak.issuer={}", url));
+                    } else if let Some(url) = issuer_url.strip_prefix("http://") {
+                        args.insert(0, format!("-Dditto.gateway.authentication.oauth.openid-connect-issuers.keycloak.issuer={}", url));
+                        args.insert(0, "-Dditto.gateway.authentication.oauth.protocol=http".into());
                     } else {
                         anyhow::bail!("Using a non-https issuer URL with Ditto is not supported");
                     }
@@ -1007,7 +1005,7 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-connectivity", &ditto),
+            self.image_name("ditto-connectivity", ditto),
             Some("connectivity-uri"),
             config_tracker,
             |_| {},
@@ -1024,7 +1022,7 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-policies", &ditto),
+            self.image_name("ditto-policies", ditto),
             Some("policies-uri"),
             config_tracker,
             |_| {},
@@ -1041,7 +1039,7 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-things", &ditto),
+            self.image_name("ditto-things", ditto),
             Some("things-uri"),
             config_tracker,
             |_| {},
@@ -1058,7 +1056,7 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-things-search", &ditto),
+            self.image_name("ditto-things-search", ditto),
             Some("searchDB-uri"),
             config_tracker,
             |_| {},
@@ -1086,7 +1084,7 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
         let cluster_marker = format!("{}-cluster", prefix);
 
         self.create_defaults(
-            &ditto,
+            ditto,
             &mut deployment,
             |labels| {
                 add_labels(labels);
@@ -1175,7 +1173,7 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
         let prefix = ditto.name();
 
         self.create_defaults(
-            &ditto,
+            ditto,
             &mut deployment,
             |labels| {
                 labels.insert(KUBERNETES_LABEL_COMPONENT.into(), "integration".into());
@@ -1184,57 +1182,72 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
             |annotations| {
                 annotations.insert(
                     OPENSHIFT_ANNOTATION_CONNECT.into(),
-                    self.connects_to(&ditto, vec!["gateway", "swaggerui"]),
+                    self.connects_to(ditto, vec!["gateway", "swaggerui"]),
                 );
             },
         );
 
         deployment.owned_by_controller(ditto)?;
 
-        if let Some(keycloak) = &ditto.spec.keycloak {
-            deployment.apply_container("oauth-proxy", |container| {
-                container.image = Some("quay.io/oauth2-proxy/oauth2-proxy:v7.0.1".into());
-                container.image_pull_policy = Some("IfNotPresent".into());
+        match &ditto.spec.keycloak {
+            Some(keycloak) if !keycloak.disable_proxy => {
+                log::debug!("Enable SSO integration");
+                deployment.apply_container("oauth-proxy", |container| {
+                    container.image = Some("quay.io/oauth2-proxy/oauth2-proxy:v7.2.0".into());
+                    container.image_pull_policy = Some("IfNotPresent".into());
 
-                container.add_env_from_field_path("HOSTNAME", "status.podIP")?;
-                keycloak
-                    .client_id
-                    .apply_to_env(container, "OAUTH2_PROXY_CLIENT_ID");
-                keycloak
-                    .client_secret
-                    .apply_to_env(container, "OAUTH2_PROXY_CLIENT_SECRET");
+                    container.add_env_from_field_path("HOSTNAME", "status.podIP")?;
+                    keycloak
+                        .client_id
+                        .apply_to_env(container, "OAUTH2_PROXY_CLIENT_ID");
+                    keycloak
+                        .client_secret
+                        .apply_to_env(container, "OAUTH2_PROXY_CLIENT_SECRET");
 
-                let mut args: Vec<_> = vec![
-                    "--email-domain=*".to_string(),
-                    "--scope=openid".to_string(),
-                    "--reverse-proxy=true".to_string(),
-                    "--http-address=0.0.0.0:4180".to_string(),
-                    "--upstream=http://$(HOSTNAME):8080/".to_string(),
-                    "--provider=keycloak".to_string(),
-                    Self::keycloak_url_arg("--login-url", &keycloak, "/auth"),
-                    Self::keycloak_url_arg("--redeem-url", &keycloak, "/token"),
-                    Self::keycloak_url_arg("--profile-url", &keycloak, "/userinfo"),
-                    Self::keycloak_url_arg("--validate-url", &keycloak, "/userinfo"),
-                ];
+                    let mut args: Vec<_> = vec![
+                        "--email-domain=*".to_string(),
+                        "--scope=openid".to_string(),
+                        "--reverse-proxy=true".to_string(),
+                        "--http-address=0.0.0.0:4180".to_string(),
+                        "--upstream=http://$(HOSTNAME):8080/".to_string(),
+                        "--provider=keycloak".to_string(),
+                        Self::keycloak_url_arg("--login-url", keycloak, "/auth"),
+                        Self::keycloak_url_arg("--redeem-url", keycloak, "/token"),
+                        Self::keycloak_url_arg("--profile-url", keycloak, "/userinfo"),
+                        Self::keycloak_url_arg("--validate-url", keycloak, "/userinfo"),
+                    ];
 
-                for group in &keycloak.groups {
-                    args.push(format!("--allowed-group={}", group));
-                }
+                    container
+                        .set_env("OAUTH2_PROXY_PROVIDER_DISPLAY_NAME", keycloak.label.clone())?;
+                    container
+                        .set_env("OAUTH2_PROXY_REDIRECT_URL", keycloak.redirect_url.clone())?;
 
-                container.args = Some(args);
+                    if !keycloak.url.starts_with("https://") {
+                        container.add_env("OAUTH2_PROXY_COOKIE_SECURE", "false")?;
+                    } else {
+                        container.drop_env("OAUTH2_PROXY_COOKIE_SECURE");
+                    }
 
-                container.add_env_from_secret(
-                    "OAUTH2_PROXY_COOKIE_SECRET",
-                    prefix.clone() + "-oauth",
-                    "cookie.secret",
-                )?;
+                    for group in &keycloak.groups {
+                        args.push(format!("--allowed-group={}", group));
+                    }
 
-                container.add_port("oauth", 4180, None)?;
+                    container.args = Some(args);
 
-                Ok(())
-            })?;
-        } else {
-            deployment.remove_container_by_name("oauth-proxy");
+                    container.add_env_from_secret(
+                        "OAUTH2_PROXY_COOKIE_SECRET",
+                        prefix.clone() + "-oauth",
+                        "cookie.secret",
+                    )?;
+
+                    container.add_port("oauth", 4180, None)?;
+
+                    Ok(())
+                })?;
+            }
+            _ => {
+                deployment.remove_container_by_name("oauth-proxy");
+            }
         }
 
         deployment.spec.use_or_create_err(|spec| {
@@ -1301,7 +1314,7 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
         let prefix = ditto.name();
 
         self.create_defaults(
-            &ditto,
+            ditto,
             &mut deployment,
             |labels| {
                 labels.insert(KUBERNETES_LABEL_COMPONENT.into(), "frontend".into());
@@ -1317,7 +1330,7 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
                 template_spec
                     .init_containers
                     .apply_container("init", |container| {
-                        container.image = Some("docker.io/swaggerapi/swagger-ui:v3.44.1".into());
+                        container.image = Some(self.swaggerui_image(ditto));
                         container.command = Some(
                             vec![
                                 "sh",
@@ -1354,7 +1367,7 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
                 template_spec
                     .containers
                     .apply_container("swagger-ui", |container| {
-                        container.image = Some("docker.io/swaggerapi/swagger-ui:v3.44.1".into());
+                        container.image = Some(self.swaggerui_image(ditto));
 
                         container.add_port("http", 8080, None)?;
 
@@ -1568,5 +1581,14 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
             }),
             ..Default::default()
         });
+    }
+
+    fn swaggerui_image(&self, ditto: &Ditto) -> String {
+        ditto
+            .spec
+            .swagger_ui
+            .clone()
+            .and_then(|ui| ui.image)
+            .unwrap_or_else(|| "docker.io/swaggerapi/swagger-ui:v3.44.1".into())
     }
 }
