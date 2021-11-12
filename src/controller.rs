@@ -18,6 +18,9 @@ use crate::{
     nginx,
 };
 use anyhow::{anyhow, Result};
+use k8s_openapi::api::networking::v1::{
+    HTTPIngressPath, IngressBackend, IngressServiceBackend, ServiceBackendPort,
+};
 use k8s_openapi::{
     api::{
         apps::v1::Deployment,
@@ -25,27 +28,26 @@ use k8s_openapi::{
             ConfigMap, ConfigMapVolumeSource, Container, HTTPGetAction, Probe, Secret, Service,
             ServiceAccount, ServicePort, Volume, VolumeMount,
         },
+        networking::v1::{HTTPIngressRuleValue, Ingress, IngressRule},
         rbac::v1::{PolicyRule, Role, RoleBinding, Subject},
     },
     apimachinery::pkg::util::intstr::IntOrString,
     ByteString, Resource,
 };
 use kube::{
-    api::{DeleteParams, Meta, PostParams},
-    Api, Client,
+    api::{DeleteParams, PostParams},
+    Api, Client, ResourceExt,
 };
 use log::debug;
-use openshift_openapi::api::route::v1::{Route, RoutePort};
-use operator_framework::install::container::{ApplyVolumeMount, RemoveContainer};
-use operator_framework::install::Delete;
 use operator_framework::{
     install::{
         config::{AppendBinary, AppendString},
         container::{
-            ApplyContainer, ApplyEnvironmentVariable, ApplyPort, SetArgs, SetCommand, SetResources,
+            ApplyContainer, ApplyEnvironmentVariable, ApplyPort, ApplyVolumeMount, RemoveContainer,
+            SetArgs, SetCommand, SetResources,
         },
         meta::OwnedBy,
-        KubeReader,
+        Delete, KubeReader,
     },
     process::create_or_update,
     tracker::{ConfigTracker, Trackable},
@@ -57,6 +59,8 @@ use serde_json::json;
 use std::{collections::BTreeMap, fmt::Display};
 
 pub struct DittoController {
+    has_openshift: bool,
+
     client: Client,
     deployments: Api<Deployment>,
     secrets: Api<Secret>,
@@ -65,7 +69,7 @@ pub struct DittoController {
     roles: Api<Role>,
     role_bindings: Api<RoleBinding>,
     services: Api<Service>,
-    routes: Option<Api<Route>>,
+    ingress: Api<Ingress>,
 }
 
 pub const DITTO_REGISTRY: &str = "docker.io/eclipse";
@@ -77,6 +81,7 @@ pub const NGINX_IMAGE: &str = "docker.io/nginx:mainline";
 impl DittoController {
     pub fn new(namespace: &str, client: Client, has_openshift: bool) -> Self {
         DittoController {
+            has_openshift,
             client: client.clone(),
             deployments: Api::namespaced(client.clone(), &namespace),
             secrets: Api::namespaced(client.clone(), &namespace),
@@ -85,11 +90,7 @@ impl DittoController {
             role_bindings: Api::namespaced(client.clone(), &namespace),
             services: Api::namespaced(client.clone(), &namespace),
             configmaps: Api::namespaced(client.clone(), &namespace),
-            routes: if has_openshift {
-                Some(Api::namespaced(client, &namespace))
-            } else {
-                None
-            },
+            ingress: Api::namespaced(client, &namespace),
         }
     }
 
@@ -110,11 +111,10 @@ impl DittoController {
     }
 
     pub async fn reconcile(&self, ditto: Ditto) -> Result<()> {
+        let name = ditto.name();
         let namespace = ditto
             .namespace()
-            .as_ref()
-            .ok_or_else(|| anyhow!("Missing namespace"))?
-            .clone();
+            .ok_or_else(|| anyhow!("Missing namespace"))?;
         let original_ditto = ditto.clone();
 
         let result = self.do_reconcile(ditto).await;
@@ -132,6 +132,8 @@ impl DittoController {
                 ditto.status = Some(DittoStatus {
                     phase: "Failed".into(),
                     message: Some(err.to_string()),
+                    // FIXME: use conditions
+                    conditions: vec![],
                 });
                 (ditto, Err(err))
             }
@@ -139,11 +141,7 @@ impl DittoController {
 
         if !original_ditto.eq(&ditto) {
             Api::<Ditto>::namespaced(self.client.clone(), &namespace)
-                .replace_status(
-                    &ditto.name(),
-                    &PostParams::default(),
-                    serde_json::to_vec(&ditto)?,
-                )
+                .replace_status(&name, &PostParams::default(), serde_json::to_vec(&ditto)?)
                 .await?;
         }
 
@@ -151,10 +149,11 @@ impl DittoController {
     }
 
     async fn do_reconcile(&self, ditto: Ditto) -> Result<Ditto> {
+        let name = ditto.name();
         let prefix = ditto.name();
         let namespace = ditto.namespace().expect("Missing namespace");
 
-        log::info!("Reconcile: {}/{}", namespace, ditto.name());
+        log::info!("Reconcile: {}/{}", namespace, name);
 
         let service_account_name = prefix.to_string();
 
@@ -182,7 +181,7 @@ impl DittoController {
                     data.track_with(ditto_tracker);
                 });
 
-                Ok(secret)
+                Ok::<_, anyhow::Error>(secret)
             },
         )
         .await?;
@@ -237,7 +236,7 @@ impl DittoController {
 
                         secret.track_with(gateway_tracker);
 
-                        Ok(secret)
+                        Ok::<_, anyhow::Error>(secret)
                     },
                 )
                 .await?;
@@ -267,7 +266,7 @@ impl DittoController {
                             }]);
                         });
 
-                        Ok(service)
+                        Ok::<_, anyhow::Error>(service)
                     },
                 )
                 .await?;
@@ -278,7 +277,7 @@ impl DittoController {
                     cm.owned_by_controller(&ditto)?;
                     cm.append_string("nginx.conf.template", data::nginx_conf_preauth());
                     cm.track_with(&mut gateway_tracker);
-                    Ok(cm)
+                    Ok::<_, anyhow::Error>(cm)
                 })
                 .await?;
 
@@ -304,12 +303,17 @@ impl DittoController {
         let reader = KubeReader::new(&self.configmaps, &self.secrets);
         let credentials = match (&ditto.spec.mongo_db.username, &ditto.spec.mongo_db.password) {
             (Some(username), Some(password)) => {
+                let username = username.read_value(&reader).await?.unwrap_or_default();
                 let password = password.read_value(&reader).await?.unwrap_or_default();
                 let username = utf8_percent_encode(&username, NON_ALPHANUMERIC);
                 let password = utf8_percent_encode(&password, NON_ALPHANUMERIC);
                 format!("{}:{}@", username, password)
             }
             _ => "".to_string(),
+        };
+        let database = match &ditto.spec.mongo_db.database {
+            Some(database) => database.read_value(&reader).await?.unwrap_or_default(),
+            None => "ditto".to_string(),
         };
 
         create_or_update(
@@ -333,18 +337,12 @@ impl DittoController {
                             credentials,
                             ditto.spec.mongo_db.host,
                             ditto.spec.mongo_db.port,
-                            ditto
-                                .spec
-                                .mongo_db
-                                .database
-                                .as_ref()
-                                .cloned()
-                                .unwrap_or_else(|| "ditto".into()),
+                            database,
                         ),
                     );
                 }
                 secret.track_with(ditto_tracker);
-                Ok(secret)
+                Ok::<_, anyhow::Error>(secret)
             },
         )
         .await?;
@@ -355,7 +353,7 @@ impl DittoController {
             &service_account_name,
             |mut service_account| {
                 service_account.owned_by_controller(&ditto)?;
-                Ok(service_account)
+                Ok::<_, anyhow::Error>(service_account)
             },
         )
         .await?;
@@ -368,7 +366,7 @@ impl DittoController {
                 verbs: vec!["get".into(), "watch".into(), "list".into()],
                 ..Default::default()
             }]);
-            Ok(role)
+            Ok::<_, anyhow::Error>(role)
         })
         .await?;
 
@@ -381,7 +379,7 @@ impl DittoController {
 
                 role_binding.role_ref.kind = Role::KIND.to_string();
                 role_binding.role_ref.api_group = Role::GROUP.to_string();
-                role_binding.role_ref.name = prefix.clone();
+                role_binding.role_ref.name = prefix.to_string();
 
                 role_binding.subjects = Some(vec![Subject {
                     kind: ServiceAccount::KIND.into(),
@@ -389,7 +387,7 @@ impl DittoController {
                     ..Default::default()
                 }]);
 
-                Ok(role_binding)
+                Ok::<_, anyhow::Error>(role_binding)
             },
         )
         .await?;
@@ -409,7 +407,7 @@ impl DittoController {
                             .collect::<String>()
                     });
                     secret.track_with(&mut gateway_tracker);
-                    Ok(secret)
+                    Ok::<_, anyhow::Error>(secret)
                 },
             )
             .await?;
@@ -479,7 +477,7 @@ impl DittoController {
                 service.spec.use_or_create(|spec| {
                     // set labels
 
-                    let cluster_marker = format!("{}-cluster", ditto.name());
+                    let cluster_marker = format!("{}-cluster", name);
 
                     let mut labels = BTreeMap::new();
                     labels.insert("akka.cluster".into(), cluster_marker);
@@ -505,7 +503,7 @@ impl DittoController {
                     ]);
                 });
 
-                Ok(service)
+                Ok::<_, anyhow::Error>(service)
             },
         )
         .await?;
@@ -532,7 +530,7 @@ impl DittoController {
                     }]);
                 });
 
-                Ok(service)
+                Ok::<_, anyhow::Error>(service)
             },
         )
         .await?;
@@ -564,7 +562,7 @@ impl DittoController {
                     }]);
                 });
 
-                Ok(service)
+                Ok::<_, anyhow::Error>(service)
             },
         )
         .await?;
@@ -591,7 +589,7 @@ impl DittoController {
                     }]);
                 });
 
-                Ok(service)
+                Ok::<_, anyhow::Error>(service)
             },
         )
         .await?;
@@ -617,7 +615,7 @@ impl DittoController {
                 cm.append_string("ditto-api-v2.yaml", openapi_v2(&options)?);
                 cm.track_with(&mut nginx_tracker);
 
-                Ok(cm)
+                Ok::<_, anyhow::Error>(cm)
             },
         )
         .await?;
@@ -630,10 +628,10 @@ impl DittoController {
                 cm.owned_by_controller(&ditto)?;
                 cm.append_string(
                     "nginx.conf",
-                    data::nginx_conf(ditto.name(), true, ditto.spec.keycloak.is_some()),
+                    data::nginx_conf(name, true, ditto.spec.keycloak.is_some()),
                 );
                 cm.track_with(&mut nginx_tracker);
-                Ok(cm)
+                Ok::<_, anyhow::Error>(cm)
             },
         )
         .await?;
@@ -650,7 +648,7 @@ impl DittoController {
                         cm.init_string("nginx.htpasswd", "ditto:A6BgmB8IEtPTs");
                     }
                     cm.track_with(&mut nginx_tracker);
-                    Ok(cm)
+                    Ok::<_, anyhow::Error>(cm)
                 },
             )
             .await?;
@@ -666,7 +664,7 @@ impl DittoController {
                 cm.owned_by_controller(&ditto)?;
                 cm.append_string("nginx-cors.conf", include_str!("resources/nginx.cors"));
                 cm.track_with(&mut nginx_tracker);
-                Ok(cm)
+                Ok::<_, anyhow::Error>(cm)
             },
         )
         .await?;
@@ -708,7 +706,7 @@ impl DittoController {
                     &include_bytes!("resources/favicon-96x96.png")[..],
                 );
                 cm.track_with(&mut nginx_tracker);
-                Ok(cm)
+                Ok::<_, anyhow::Error>(cm)
             },
         )
         .await?;
@@ -729,28 +727,58 @@ impl DittoController {
         )
         .await?;
 
-        if let Some(ref routes) = self.routes {
+        if let Some(ditto_ingress) = &ditto.spec.ingress {
             create_or_update(
-                routes,
+                &self.ingress,
                 Some(&namespace),
                 prefix.clone() + "-console",
-                |mut route| {
-                    route.owned_by_controller(&ditto)?;
-                    route.spec.tls.use_or_create(|tls| {
-                        tls.termination = "Edge".into();
-                        tls.insecure_edge_termination_policy = Some("None".into());
-                    });
-                    route.spec.port = Some(RoutePort {
-                        target_port: IntOrString::String("http".into()),
-                    });
-                    route.spec.to.kind = "Service".into();
-                    route.spec.to.name = prefix.clone() + "-nginx";
-                    route.spec.to.weight = 100;
+                |mut ingress| {
+                    ingress.owned_by_controller(&ditto)?;
 
-                    Ok(route)
+                    ingress.spec.use_or_create(|spec| {
+                        spec.ingress_class_name = ditto_ingress.class_name.clone();
+                        spec.rules = Some(vec![IngressRule {
+                            host: Some(ditto_ingress.host.clone()),
+                            http: Some(HTTPIngressRuleValue {
+                                paths: vec![HTTPIngressPath {
+                                    path: Some("/".into()),
+                                    path_type: Some("Prefix".into()),
+                                    backend: IngressBackend {
+                                        service: Some(IngressServiceBackend {
+                                            name: prefix.clone() + "-nginx",
+                                            port: Some(ServiceBackendPort {
+                                                name: Some("http".into()),
+                                                ..Default::default()
+                                            }),
+                                        }),
+                                        ..Default::default()
+                                    },
+                                }],
+                            }),
+                        }]);
+                    });
+
+                    if !ditto_ingress.annotations.is_empty() {
+                        // if we have annotations, we apply them
+                        *ingress.annotations_mut() = ditto_ingress.annotations.clone();
+                    } else if self.has_openshift {
+                        // if we have no annotations and run on openshift, we set some defaults
+                        ingress
+                            .annotations_mut()
+                            .insert("route.openshift.io/termination".into(), "edge".into());
+                    } else {
+                        // otherwise, we clear them out
+                        ingress.annotations_mut().clear();
+                    }
+
+                    Ok::<_, anyhow::Error>(ingress)
                 },
             )
             .await?;
+        } else {
+            self.ingress
+                .delete_optionally(&prefix, &DeleteParams::default())
+                .await?;
         }
 
         Ok(ditto)
@@ -822,7 +850,7 @@ impl DittoController {
             nginx::Volume::secret(
                 "internal-auth",
                 "/etc/init/secrets",
-                prefix + "-preauth-secret",
+                format!("{}-preauth-secret", prefix),
             ),
         ];
 
@@ -942,12 +970,12 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
 
             container.add_env_from_secret(
                 "DEVOPS_PASSWORD",
-                format!("{}-gateway-secret", ditto.name()),
+                format!("{}-gateway-secret", prefix),
                 "devops-password",
             )?;
             container.add_env_from_secret(
                 "STATUS_PASSWORD",
-                format!("{}-gateway-secret", ditto.name()),
+                format!("{}-gateway-secret", prefix),
                 "status-password",
             )?;
 
@@ -1042,7 +1070,7 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
     {
         let prefix = ditto.name();
 
-        let cluster_marker = format!("{}-cluster", ditto.name());
+        let cluster_marker = format!("{}-cluster", prefix);
 
         self.create_defaults(
             &ditto,
@@ -1090,7 +1118,7 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
                 container.add_port("management", 8558, None)?;
 
                 container.add_env("DISCOVERY_METHOD", "akka-dns")?;
-                container.add_env("CLUSTER_BS_SERVICE_NAME", format!("{}-akka", ditto.name()))?;
+                container.add_env("CLUSTER_BS_SERVICE_NAME", format!("{}-akka", prefix))?;
                 container.add_env("CLUSTER_BS_SERVICE_NAMESPACE", ditto.namespace().unwrap_or_default())?;
 
                 container.add_env("OPENJ9_JAVA_OPTIONS", "-XX:+ExitOnOutOfMemoryError -Xtune:virtualized -Xss512k -XX:MaxRAMPercentage=80 -XX:InitialRAMPercentage=40 -Dakka.coordinated-shutdown.exit-jvm=on -Dorg.mongodb.async.type=netty")?;
@@ -1115,9 +1143,11 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
     }
 
     fn connects_to(&self, ditto: &Ditto, to: Vec<&str>) -> String {
+        let name = ditto.name();
+
         let connects = to
             .iter()
-            .map(|n| format!("{}-{}", n, ditto.name()))
+            .map(|n| format!("{}-{}", n, name))
             .collect::<Vec<String>>();
 
         serde_json::to_string(&connects).unwrap_or_else(|_| "".into())
@@ -1424,7 +1454,8 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
         L: FnOnce(&mut BTreeMap<String, String>),
         A: FnOnce(&mut BTreeMap<String, String>),
     {
-        let prefix = format!("{}-", ditto.name());
+        let ditto_name = ditto.name();
+        let prefix = format!("{}-", ditto_name);
         let name = deployment.name();
         let name = if name.starts_with(&prefix) {
             name[prefix.len()..].to_string()
@@ -1439,10 +1470,10 @@ openssl passwd -apr1 -in /etc/init/secrets/password >> /writable-conf/nginx.htpa
         labels.insert("app.kubernetes.io/name".into(), name.clone());
         labels.insert(
             "app.kubernetes.io/instance".into(),
-            format!("{}-{}", name, ditto.name()),
+            format!("{}-{}", name, ditto_name),
         );
 
-        labels.insert("app.kubernetes.io/part-of".into(), ditto.name());
+        labels.insert("app.kubernetes.io/part-of".into(), ditto_name);
         labels.insert("app.kubernetes.io/version".into(), DITTO_VERSION.into());
         labels.insert(
             "app.kubernetes.io/managed-by".into(),

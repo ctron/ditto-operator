@@ -1,0 +1,186 @@
+/*
+ * Copyright (c) 2020, 2021 Red Hat Inc.
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
+use kube::CustomResource;
+use operator_framework::install::ValueOrReference;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+#[derive(CustomResource, Serialize, Deserialize, Default, Debug, Clone, PartialEq, JsonSchema)]
+#[kube(
+    group = "iot.eclipse.org",
+    version = "v1alpha1",
+    kind = "Ditto",
+    namespaced,
+    derive = "Default",
+    derive = "PartialEq",
+    status = "DittoStatus"
+)]
+#[kube(printcolumn = r#"{"name": "Phase", "jsonPath": ".status.phase", "type": "string"}"#)]
+#[kube(printcolumn = r#"{"name": "Message", "jsonPath": ".status.message", "type": "string"}"#)]
+#[serde(default, rename_all = "camelCase")]
+pub struct DittoSpec {
+    pub mongo_db: MongoDb,
+    /// Secure the devops status information.
+    pub devops_secure_status: bool,
+    /// Create the default "ditto" user when initially deploying.
+    pub create_default_user: Option<bool>,
+    /// Allow to override the Ditto image version.
+    pub version: Option<String>,
+    /// Enable and configure keycloak integration.
+    pub keycloak: Option<Keycloak>,
+
+    /// Influence some options of the hosted OpenAPI spec.
+    pub open_api: Option<OpenApi>,
+
+    /// Configure an internal service account.
+    pub internal_service: Option<InternalService>,
+
+    /// Configure ingress options
+    ///
+    /// If the field is missing, no ingress resource is being created.
+    pub ingress: Option<IngressSpec>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct IngressSpec {
+    /// The host of the ingress resource.
+    ///
+    /// This is required if the ingress resource should be created by the operator
+    pub host: String,
+    /// The optional ingress class name.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub class_name: Option<String>,
+    /// Annotations which should be applied to the ingress resources.
+    ///
+    /// The annotations will be set to the resource, not merged. All changes done on the ingress
+    /// resource itself will be overridden.
+    ///
+    /// If no annotations are configured, reasonable defaults will be used instead. You can
+    /// prevent this by setting a single dummy annotation.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub annotations: BTreeMap<String, String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct InternalService {
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+}
+
+/// Keycloak configuration options.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Keycloak {
+    pub url: String,
+    pub realm: String,
+
+    pub client_id: ValueOrReference,
+    pub client_secret: ValueOrReference,
+
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<String>,
+
+    /// Label when referencing this login option.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Description of this login option.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenApi {
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_label: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
+#[serde(default)]
+pub struct MongoDb {
+    /// The hostname of the MongoDB instance.
+    pub host: String,
+    /// The port name of the MongoDB instance.
+    pub port: u16,
+    /// The optional database name used to connect, defaults to "ditto".
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub database: Option<ValueOrReference>,
+
+    /// The username used to connect to the MongoDB instance.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username: Option<ValueOrReference>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    /// The password used to connect to the MongoDB instance.
+    pub password: Option<ValueOrReference>,
+}
+
+impl Default for MongoDb {
+    fn default() -> Self {
+        MongoDb {
+            port: 27017,
+            host: "mongodb".into(),
+            database: Default::default(),
+            username: Default::default(),
+            password: Default::default(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
+#[serde(default)]
+pub struct DittoStatus {
+    /// The phase the deployment is in.
+    pub phase: String,
+
+    /// An optional message
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+
+    /// Status conditions
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub conditions: Vec<Condition>,
+}
+
+#[cfg(test)]
+mod test {
+
+    use super::*;
+    use kube::Resource;
+
+    #[test]
+    fn verify_resource() {
+        assert_eq!(Ditto::kind(&()), "Ditto");
+        assert_eq!(Ditto::group(&()), "iot.eclipse.org");
+        assert_eq!(Ditto::version(&()), "v1alpha1");
+        assert_eq!(Ditto::api_version(&()), "iot.eclipse.org/v1alpha1");
+    }
+}

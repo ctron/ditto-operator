@@ -100,6 +100,7 @@ mod test {
             oauth_auth_url: Some("https://foo.bar".into()),
             oauth_description: Some("Single sign-on".into()),
             oauth_label: Some("My Service".into()),
+            ..Default::default()
         })
         .unwrap();
 

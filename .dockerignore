@@ -7,5 +7,8 @@ target
 # exclude dockerfile itself
 Dockerfile
 
+# IDE stuff
+.idea
+
 # needs to go last, because we want this file to be included
 !target/release/ditto-operator

@@ -13,28 +13,27 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-mod controller;
-mod crd;
-mod data;
-mod nginx;
 
-use crate::controller::DittoController;
-use crate::crd::Ditto;
+use ditto_operator::controller::DittoController;
+use ditto_operator::crd::Ditto;
 
 use futures::StreamExt;
-use snafu::Snafu;
-use std::{error::Error, fmt, time::Duration};
-
-use kube::{api::ListParams, Api, Client};
-use kube_runtime::controller::{Context, Controller, ReconcilerAction};
-
 use k8s_openapi::api::{
     apps::v1::Deployment,
     core::v1::{ConfigMap, Secret, Service, ServiceAccount},
+    networking::v1::Ingress,
     rbac::v1::{Role, RoleBinding},
 };
-use kube_runtime::reflector::ObjectRef;
-use openshift_openapi::api::route::v1::Route;
+use kube::{
+    api::ListParams,
+    runtime::{
+        controller::{Context, Controller, ReconcilerAction},
+        reflector::ObjectRef,
+    },
+    Api, Client,
+};
+use snafu::Snafu;
+use std::{error::Error, fmt, time::Duration};
 
 #[derive(Debug, Snafu)]
 enum ReconcileError {
@@ -117,14 +116,11 @@ async fn main() -> anyhow::Result<()> {
         .owns(
             Api::<ServiceAccount>::namespaced(client.clone(), &namespace),
             Default::default(),
-        );
-
-    if has_openshift {
-        c = c.owns(
-            Api::<Route>::namespaced(client.clone(), &namespace),
-            Default::default(),
         )
-    }
+        .owns(
+            Api::<Ingress>::namespaced(client.clone(), &namespace),
+            Default::default(),
+        );
 
     // now run it
 
