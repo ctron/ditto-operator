@@ -11,7 +11,9 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
+use k8s_openapi::chrono::{DateTime, Utc};
 use kube::CustomResource;
+use operator_framework::conditions::{Conditions, StateDetails};
 use operator_framework::install::ValueOrReference;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -168,6 +170,17 @@ pub struct DittoStatus {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub conditions: Vec<Condition>,
+}
+
+impl Conditions for DittoStatus {
+    fn update_condition_on<S, D, DT>(&mut self, r#type: S, state: D, now: DT)
+    where
+        S: AsRef<str>,
+        D: Into<StateDetails>,
+        DT: Into<DateTime<Utc>>,
+    {
+        self.conditions.update_condition_on(r#type, state, now)
+    }
 }
 
 #[cfg(test)]

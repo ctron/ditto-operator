@@ -848,10 +848,11 @@ dependencies = [
 [[package]]
 name = "operator-framework"
 version = "0.6.0"
-source = "git+https://github.com/ctron/operator-framework?rev=63422a64acb8caa10a6b3d2adce5b0b140a6f5bb#63422a64acb8caa10a6b3d2adce5b0b140a6f5bb"
+source = "git+https://github.com/ctron/operator-framework?rev=7a48782c360a0dd75b6fc7e901b932aaaab62794#7a48782c360a0dd75b6fc7e901b932aaaab62794"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "either",
  "futures",
  "k8s-openapi",

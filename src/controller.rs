@@ -11,7 +11,7 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 use crate::{
-    crd::{Ditto, DittoStatus, Keycloak},
+    crd::{Ditto, Keycloak},
     data::{
         self, {openapi_v1, openapi_v2, ApiOptions},
     },
@@ -39,7 +39,9 @@ use kube::{
     Api, Client, ResourceExt,
 };
 use log::debug;
+use operator_framework::conditions::StateBuilder;
 use operator_framework::{
+    conditions::{Conditions, State},
     install::{
         config::{AppendBinary, AppendString},
         container::{
@@ -121,19 +123,30 @@ impl DittoController {
 
         let (ditto, result) = match result {
             Ok(mut ditto) => {
-                ditto.status = Some(DittoStatus {
-                    phase: "Active".into(),
-                    ..Default::default()
+                ditto.status.use_or_create(|status| {
+                    status.phase = "Active".into();
+                    status.message = None;
+                    status.update_condition(
+                        "Ready",
+                        State::True
+                            .with_reason("AsExpected")
+                            .with_message("All is well"),
+                    );
                 });
                 (ditto, Ok(()))
             }
             Err(err) => {
                 let mut ditto = original_ditto.clone();
-                ditto.status = Some(DittoStatus {
-                    phase: "Failed".into(),
-                    message: Some(err.to_string()),
-                    // FIXME: use conditions
-                    conditions: vec![],
+                ditto.status.use_or_create(|status| {
+                    status.phase = "Failed".into();
+                    status.message = Some(err.to_string());
+                    status.update_condition(
+                        "Ready",
+                        State::False
+                            .with_reason("Failed")
+                            .with_message(err.to_string())
+                            .with_observed(ditto.metadata.generation),
+                    );
                 });
                 (ditto, Err(err))
             }
