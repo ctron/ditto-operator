@@ -137,56 +137,47 @@ impl<'a> Nginx<'a> {
         )
         .await?;
 
-        if self.want_welcome(ditto) {
-            create_or_update(
-                &self.configmaps,
-                Some(&namespace),
-                prefix.clone() + "-nginx-data",
-                |mut cm| {
-                    if cm.metadata.creation_timestamp.is_none() {
-                        // only take ownership if we created the config map
-                        cm.owned_by_controller(ditto)?;
-                    }
-                    // owned or not, we inject additional content to the configmap
-                    cm.append_string(
-                        "index.default.html",
-                        data::nginx_default(
-                            ditto.spec.keycloak.is_some(),
-                            self.want_swagger(&ditto),
-                        ),
-                    );
-                    cm.append_string("index.json", "{}");
-                    cm.append_string("ditto-up.svg", include_str!("../resources/ditto-up.svg"));
-                    cm.append_string(
-                        "ditto-down.svg",
-                        include_str!("../resources/ditto-down.svg"),
-                    );
-                    cm.append_string(
-                        "ditto-api-v2.yaml",
-                        include_str!("../resources/ditto-api-v2.yaml"),
-                    );
-                    cm.append_binary(
-                        "favicon-16x16.png",
-                        &include_bytes!("../resources/favicon-16x16.png")[..],
-                    );
-                    cm.append_binary(
-                        "favicon-32x32.png",
-                        &include_bytes!("../resources/favicon-32x32.png")[..],
-                    );
-                    cm.append_binary(
-                        "favicon-96x96.png",
-                        &include_bytes!("../resources/favicon-96x96.png")[..],
-                    );
-                    cm.track_with(&mut nginx_tracker);
-                    Ok::<_, anyhow::Error>(cm)
-                },
-            )
-            .await?;
-        } else {
-            self.configmaps
-                .delete_optionally(prefix.clone() + "-nginx-data", &Default::default())
-                .await?;
-        }
+        create_or_update(
+            &self.configmaps,
+            Some(&namespace),
+            prefix.clone() + "-nginx-data",
+            |mut cm| {
+                if cm.metadata.creation_timestamp.is_none() {
+                    // only take ownership if we created the config map
+                    cm.owned_by_controller(ditto)?;
+                }
+                // owned or not, we inject additional content to the configmap
+                cm.append_string(
+                    "index.default.html",
+                    data::nginx_default(ditto.spec.keycloak.is_some(), self.want_swagger(ditto)),
+                );
+                cm.append_string("index.json", "{}");
+                cm.append_string("ditto-up.svg", include_str!("../resources/ditto-up.svg"));
+                cm.append_string(
+                    "ditto-down.svg",
+                    include_str!("../resources/ditto-down.svg"),
+                );
+                cm.append_string(
+                    "ditto-api-v2.yaml",
+                    include_str!("../resources/ditto-api-v2.yaml"),
+                );
+                cm.append_binary(
+                    "favicon-16x16.png",
+                    &include_bytes!("../resources/favicon-16x16.png")[..],
+                );
+                cm.append_binary(
+                    "favicon-32x32.png",
+                    &include_bytes!("../resources/favicon-32x32.png")[..],
+                );
+                cm.append_binary(
+                    "favicon-96x96.png",
+                    &include_bytes!("../resources/favicon-96x96.png")[..],
+                );
+                cm.track_with(&mut nginx_tracker);
+                Ok::<_, anyhow::Error>(cm)
+            },
+        )
+        .await?;
 
         create_or_update(
             &self.deployments,
