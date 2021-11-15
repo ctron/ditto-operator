@@ -37,6 +37,9 @@ spec:
                 disableInfraProxy:
                   description: "Don't expose infra endpoints"
                   type: boolean
+                disableWelcomePage:
+                  description: Allow disabling the welcome page
+                  type: boolean
                 ingress:
                   description: "Configure ingress options\n\nIf the field is missing, no ingress resource is being created."
                   nullable: true

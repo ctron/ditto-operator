@@ -13,4 +13,3 @@
 pub mod controller;
 pub mod crd;
 pub mod data;
-pub mod nginx;

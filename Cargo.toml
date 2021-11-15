@@ -42,6 +42,6 @@ string-error = "0.1.0"
 #kube = { git = "https://github.com/clux/kube-rs", branch="master" }
 #kube-derive = { git = "https://github.com/clux/kube-rs", branch="master" }
 #operator-framework = { path = "../operator-framework" }
-operator-framework = { git = "https://github.com/ctron/operator-framework", rev = "59868b38af9a9101f3f048908ca98c89f3fba3bb" }
+operator-framework = { git = "https://github.com/ctron/operator-framework", rev = "6b2b03b537e9b7321374119e659ab57e1d0223f7" }
 #kube = { git = "https://github.com/ctron/kube-rs", rev = "59f175adc61575b83c01fc8809ea70cb7c172ebb" }
 

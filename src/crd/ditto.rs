@@ -57,8 +57,9 @@ pub struct DittoSpec {
     /// Influence some options of the hosted SwaggerUI.
     pub swagger_ui: Option<SwaggerUi>,
 
-    /// Configure an internal service account.
-    pub internal_service: Option<InternalService>,
+    /// Allow disabling the welcome page
+    #[serde(skip_serializing_if = "is_default")]
+    pub disable_welcome_page: bool,
 
     /// Configure ingress options
     ///
@@ -99,17 +100,6 @@ pub struct SwaggerUi {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct InternalService {
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub username: Option<String>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub password: Option<String>,
 }
 
 /// Keycloak configuration options.
