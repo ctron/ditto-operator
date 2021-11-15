@@ -59,17 +59,6 @@ spec:
                   required:
                     - host
                   type: object
-                internalService:
-                  description: Configure an internal service account.
-                  nullable: true
-                  properties:
-                    password:
-                      nullable: true
-                      type: string
-                    username:
-                      nullable: true
-                      type: string
-                  type: object
                 keycloak:
                   description: Enable and configure keycloak integration.
                   nullable: true
