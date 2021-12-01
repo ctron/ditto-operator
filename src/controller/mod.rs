@@ -60,6 +60,8 @@ use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use std::{collections::BTreeMap, fmt::Display, ops::Deref};
 
+const CONTAINER_SWAGGER_UI: &str = "docker.io/swaggerapi/swagger-ui:v3.44.1";
+
 pub struct DittoController {
     has_openshift: bool,
     context: Context,
@@ -102,7 +104,7 @@ impl Context {
             .swagger_ui
             .clone()
             .and_then(|ui| ui.image)
-            .unwrap_or_else(|| "docker.io/swaggerapi/swagger-ui:v3.44.1".into())
+            .unwrap_or_else(|| CONTAINER_SWAGGER_UI.into())
     }
 
     pub fn want_swagger(&self, ditto: &Ditto) -> bool {
@@ -641,7 +643,7 @@ impl DittoController {
                         args.insert(0, format!("-Dditto.gateway.authentication.oauth.openid-connect-issuers.keycloak.issuer={}", url));
                         args.insert(0, "-Dditto.gateway.authentication.oauth.protocol=http".into());
                     } else {
-                        anyhow::bail!("Using a non-https issuer URL with Ditto is not supported");
+                        anyhow::bail!("Using a non-http(s) issuer URL with Ditto is not supported");
                     }
 
                      Ok(())
@@ -649,8 +651,8 @@ impl DittoController {
             }
 
             // deprecated variables
-            container.drop_env("ENABLE_PRE_AUTHENTICATION");
             container.drop_env("ENABLE_DUMMY_AUTH");
+            container.drop_env("ENABLE_PRE_AUTHENTICATION");
 
             container.add_env(
                 "DEVOPS_SECURE_STATUS",
