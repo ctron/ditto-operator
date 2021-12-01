@@ -436,9 +436,10 @@ impl DittoController {
                  })?;
             }
 
+            let pre_auth = ditto.spec.keycloak.is_none();
+            container.add_env("ENABLE_PRE_AUTHENTICATION", pre_auth.to_string())?;
             // deprecated variables
             container.drop_env("ENABLE_DUMMY_AUTH");
-            container.drop_env("ENABLE_PRE_AUTHENTICATION");
 
             container.add_env(
                 "DEVOPS_SECURE_STATUS",
