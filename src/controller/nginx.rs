@@ -104,7 +104,7 @@ impl<'a> Nginx<'a> {
         )
         .await?;
 
-        if ditto.spec.keycloak.is_none() {
+        if self.want_preaut(ditto) {
             // only create htpasswd if we are not using OAuth ...
             create_or_update(
                 &self.configmaps,
@@ -283,7 +283,7 @@ impl<'a> Nginx<'a> {
                 });
             });
 
-            let volumes = vec![
+            let mut volumes = vec![
                 nginx::Volume::empty_dir("nginx-cache", "/var/cache/nginx"),
                 nginx::Volume::empty_dir("nginx-run", "/run/nginx"),
                 nginx::Volume::configmap(
@@ -292,12 +292,6 @@ impl<'a> Nginx<'a> {
                     prefix.clone() + "-nginx-conf",
                 )
                 .with_sub_path("nginx.conf"),
-                nginx::Volume::configmap(
-                    "nginx-htpasswd",
-                    "/etc/nginx/nginx.htpasswd",
-                    prefix.clone() + "-nginx-htpasswd",
-                )
-                .with_sub_path("nginx.htpasswd"),
                 nginx::Volume::configmap(
                     "nginx-cors",
                     "/etc/nginx/nginx-cors.conf",
@@ -310,6 +304,17 @@ impl<'a> Nginx<'a> {
                     prefix.clone() + "-nginx-data",
                 ),
             ];
+
+            if self.want_preaut(ditto) {
+                volumes.push(
+                    nginx::Volume::configmap(
+                        "nginx-htpasswd",
+                        "/etc/nginx/nginx.htpasswd",
+                        prefix.clone() + "-nginx-htpasswd",
+                    )
+                    .with_sub_path("nginx.htpasswd"),
+                );
+            }
 
             nginx::apply_volumes(&volumes, &mut spec.template, "nginx")?;
 

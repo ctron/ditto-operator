@@ -35,6 +35,10 @@ impl Context {
         ]
     }
 
+    pub fn want_preaut(&self, ditto: &Ditto) -> bool {
+        ditto.spec.keycloak.is_none()
+    }
+
     pub fn want_welcome(&self, ditto: &Ditto) -> bool {
         !ditto.spec.disable_welcome_page
     }
