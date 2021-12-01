@@ -21,6 +21,7 @@ pub struct Context {
     pub role_bindings: Api<RoleBinding>,
     pub services: Api<Service>,
     pub ingress: Api<Ingress>,
+    pub has_openshift: bool,
 }
 
 impl Context {

@@ -13,12 +13,13 @@
 
 mod context;
 mod ditto;
+mod ingress;
 mod nginx;
 mod rbac;
 mod swaggerui;
 
 use crate::{
-    controller::{nginx::Nginx, rbac::Rbac, swaggerui::SwaggerUi},
+    controller::{ingress::Ingress, nginx::Nginx, rbac::Rbac, swaggerui::SwaggerUi},
     crd::{Ditto, Keycloak},
 };
 use anyhow::{anyhow, Result};
@@ -27,10 +28,6 @@ use k8s_openapi::{
     api::{
         apps::v1::Deployment,
         core::v1::{Container, HTTPGetAction, Probe, ServicePort},
-        networking::v1::{
-            HTTPIngressPath, HTTPIngressRuleValue, IngressBackend, IngressRule,
-            IngressServiceBackend, ServiceBackendPort,
-        },
     },
     apimachinery::pkg::util::intstr::IntOrString,
     ByteString,
@@ -62,7 +59,6 @@ pub const KUBERNETES_LABEL_COMPONENT: &str = "app.kubernetes.io/component";
 pub const OPENSHIFT_ANNOTATION_CONNECT: &str = "app.openshift.io/connects-to";
 
 pub struct DittoController {
-    has_openshift: bool,
     context: Context,
 }
 
@@ -77,7 +73,6 @@ impl Deref for DittoController {
 impl DittoController {
     pub fn new(namespace: &str, client: Client, has_openshift: bool) -> Self {
         DittoController {
-            has_openshift,
             context: Context {
                 client: client.clone(),
                 deployments: Api::namespaced(client.clone(), namespace),
@@ -88,6 +83,7 @@ impl DittoController {
                 services: Api::namespaced(client.clone(), namespace),
                 configmaps: Api::namespaced(client.clone(), namespace),
                 ingress: Api::namespaced(client, namespace),
+                has_openshift,
             },
         }
     }
@@ -379,60 +375,7 @@ impl DittoController {
             .process(&ditto, &mut nginx_tracker)
             .await?;
         Nginx(&self.context).process(&ditto, nginx_tracker).await?;
-
-        if let Some(ditto_ingress) = &ditto.spec.ingress {
-            create_or_update(
-                &self.ingress,
-                Some(&namespace),
-                prefix.clone() + "-console",
-                |mut ingress| {
-                    ingress.owned_by_controller(&ditto)?;
-
-                    ingress.spec.use_or_create(|spec| {
-                        spec.ingress_class_name = ditto_ingress.class_name.clone();
-                        spec.rules = Some(vec![IngressRule {
-                            host: Some(ditto_ingress.host.clone()),
-                            http: Some(HTTPIngressRuleValue {
-                                paths: vec![HTTPIngressPath {
-                                    path: Some("/".into()),
-                                    path_type: Some("Prefix".into()),
-                                    backend: IngressBackend {
-                                        service: Some(IngressServiceBackend {
-                                            name: prefix.clone() + "-nginx",
-                                            port: Some(ServiceBackendPort {
-                                                name: Some("http".into()),
-                                                ..Default::default()
-                                            }),
-                                        }),
-                                        ..Default::default()
-                                    },
-                                }],
-                            }),
-                        }]);
-                    });
-
-                    if !ditto_ingress.annotations.is_empty() {
-                        // if we have annotations, we apply them
-                        *ingress.annotations_mut() = ditto_ingress.annotations.clone();
-                    } else if self.has_openshift {
-                        // if we have no annotations and run on openshift, we set some defaults
-                        ingress
-                            .annotations_mut()
-                            .insert("route.openshift.io/termination".into(), "edge".into());
-                    } else {
-                        // otherwise, we clear them out
-                        ingress.annotations_mut().clear();
-                    }
-
-                    Ok::<_, anyhow::Error>(ingress)
-                },
-            )
-            .await?;
-        } else {
-            self.ingress
-                .delete_optionally(&prefix, &DeleteParams::default())
-                .await?;
-        }
+        Ingress(&self.context).process(&ditto).await?;
 
         Ok(ditto)
     }
