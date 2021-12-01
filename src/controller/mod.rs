@@ -11,6 +11,8 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+mod context;
+mod ditto;
 mod nginx;
 mod rbac;
 mod swaggerui;
@@ -20,18 +22,15 @@ use crate::{
     crd::{Ditto, Keycloak},
 };
 use anyhow::{anyhow, Result};
-use k8s_openapi::api::networking::v1::{
-    HTTPIngressPath, IngressBackend, IngressServiceBackend, ServiceBackendPort,
-};
+use context::Context;
 use k8s_openapi::{
     api::{
         apps::v1::Deployment,
-        core::v1::{
-            ConfigMap, Container, HTTPGetAction, Probe, Secret, Service, ServiceAccount,
-            ServicePort,
+        core::v1::{Container, HTTPGetAction, Probe, ServicePort},
+        networking::v1::{
+            HTTPIngressPath, HTTPIngressRuleValue, IngressBackend, IngressRule,
+            IngressServiceBackend, ServiceBackendPort,
         },
-        networking::v1::{HTTPIngressRuleValue, Ingress, IngressRule},
-        rbac::v1::{Role, RoleBinding},
     },
     apimachinery::pkg::util::intstr::IntOrString,
     ByteString,
@@ -40,7 +39,6 @@ use kube::{
     api::{DeleteParams, PostParams},
     Api, Client, ResourceExt,
 };
-use log::debug;
 use operator_framework::{
     conditions::{Conditions, State, StateBuilder},
     install::{
@@ -58,9 +56,10 @@ use operator_framework::{
 };
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
-use std::{collections::BTreeMap, fmt::Display, ops::Deref};
+use std::{collections::BTreeMap, ops::Deref};
 
-const CONTAINER_SWAGGER_UI: &str = "docker.io/swaggerapi/swagger-ui:v3.44.1";
+pub const KUBERNETES_LABEL_COMPONENT: &str = "app.kubernetes.io/component";
+pub const OPENSHIFT_ANNOTATION_CONNECT: &str = "app.openshift.io/connects-to";
 
 pub struct DittoController {
     has_openshift: bool,
@@ -74,146 +73,6 @@ impl Deref for DittoController {
         &self.context
     }
 }
-
-pub struct Context {
-    client: Client,
-    deployments: Api<Deployment>,
-    secrets: Api<Secret>,
-    configmaps: Api<ConfigMap>,
-    service_accounts: Api<ServiceAccount>,
-    roles: Api<Role>,
-    role_bindings: Api<RoleBinding>,
-    services: Api<Service>,
-    ingress: Api<Ingress>,
-}
-
-impl Context {
-    pub fn service_selector(&self, component: &str, ditto: &Ditto) -> Vec<(String, String)> {
-        vec![
-            ("app.kubernetes.io/name".into(), component.to_string()),
-            (
-                "app.kubernetes.io/instance".into(),
-                format!("{}-{}", component, ditto.name()),
-            ),
-        ]
-    }
-
-    pub fn swaggerui_image(&self, ditto: &Ditto) -> String {
-        ditto
-            .spec
-            .swagger_ui
-            .clone()
-            .and_then(|ui| ui.image)
-            .unwrap_or_else(|| CONTAINER_SWAGGER_UI.into())
-    }
-
-    pub fn want_swagger(&self, ditto: &Ditto) -> bool {
-        !ditto
-            .spec
-            .swagger_ui
-            .as_ref()
-            .map(|ui| ui.disable)
-            .unwrap_or_default()
-    }
-
-    pub fn want_welcome(&self, ditto: &Ditto) -> bool {
-        !ditto.spec.disable_welcome_page
-    }
-
-    fn connects_to(&self, ditto: &Ditto, to: Vec<&str>) -> String {
-        let name = ditto.name();
-
-        let connects = to
-            .iter()
-            .map(|n| format!("{}-{}", n, name))
-            .collect::<Vec<String>>();
-
-        serde_json::to_string(&connects).unwrap_or_else(|_| "".into())
-    }
-
-    fn create_defaults<L, A>(
-        &self,
-        ditto: &Ditto,
-        deployment: &mut Deployment,
-        add_labels: L,
-        add_selector_labels: Vec<String>,
-        add_annotations: A,
-    ) where
-        L: FnOnce(&mut BTreeMap<String, String>),
-        A: FnOnce(&mut BTreeMap<String, String>),
-    {
-        let ditto_name = ditto.name();
-        let prefix = format!("{}-", ditto_name);
-        let name = deployment.name();
-        let name = if name.starts_with(&prefix) {
-            name[prefix.len()..].to_string()
-        } else {
-            name
-        };
-
-        // add labels
-
-        let mut labels = BTreeMap::new();
-
-        labels.insert("app.kubernetes.io/name".into(), name.clone());
-        labels.insert(
-            "app.kubernetes.io/instance".into(),
-            format!("{}-{}", name, ditto_name),
-        );
-
-        labels.insert("app.kubernetes.io/part-of".into(), ditto_name);
-        labels.insert("app.kubernetes.io/version".into(), DITTO_VERSION.into());
-        labels.insert(
-            "app.kubernetes.io/managed-by".into(),
-            "ditto-operator".into(),
-        );
-
-        add_labels(&mut labels);
-
-        // set selector labels
-
-        let mut selector_labels = BTreeMap::new();
-
-        for (k, v) in &labels {
-            if k == "app.kubernetes.io/name"
-                || k == "app.kubernetes.io/instance"
-                || add_selector_labels.contains(k)
-            {
-                selector_labels.insert(k.clone(), v.clone());
-            }
-        }
-
-        debug!("Selector: {:?}", selector_labels);
-
-        // set labels
-
-        deployment.spec.use_or_create(|spec| {
-            spec.selector.match_labels = Some(selector_labels);
-            spec.template.metadata.use_or_create(|m| {
-                m.labels.use_or_create(|l| {
-                    l.extend(labels.clone());
-                });
-            });
-        });
-
-        deployment.metadata.labels = Some(labels);
-
-        // add annotations
-
-        deployment
-            .metadata
-            .annotations
-            .use_or_create(|annotations| {
-                add_annotations(annotations);
-            });
-    }
-}
-
-pub const DITTO_REGISTRY: &str = "docker.io/eclipse";
-pub const DITTO_VERSION: &str = "2.1.1";
-pub const KUBERNETES_LABEL_COMPONENT: &str = "app.kubernetes.io/component";
-pub const OPENSHIFT_ANNOTATION_CONNECT: &str = "app.openshift.io/connects-to";
-pub const NGINX_IMAGE: &str = "docker.io/library/nginx:mainline";
 
 impl DittoController {
     pub fn new(namespace: &str, client: Client, has_openshift: bool) -> Self {
@@ -231,22 +90,6 @@ impl DittoController {
                 ingress: Api::namespaced(client, namespace),
             },
         }
-    }
-
-    fn image_name<S>(&self, base: S, ditto: &Ditto) -> String
-    where
-        S: ToString + Display,
-    {
-        format!("{}/{}:{}", DITTO_REGISTRY, base, self.image_version(ditto))
-    }
-
-    fn image_version(&self, ditto: &Ditto) -> String {
-        ditto
-            .spec
-            .version
-            .as_deref()
-            .unwrap_or(DITTO_VERSION)
-            .to_string()
     }
 
     pub async fn reconcile(&self, ditto: Ditto) -> Result<()> {
@@ -603,7 +446,7 @@ impl DittoController {
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-concierge", ditto),
+            self.ditto_image_name("ditto-concierge", ditto),
             Some("concierge-uri"),
             config_tracker,
             |_| {},
@@ -622,7 +465,7 @@ impl DittoController {
         let mut deployment = self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-gateway", ditto),
+            self.ditto_image_name("ditto-gateway", ditto),
             None,
             config_tracker,
             |_| {},
@@ -685,7 +528,7 @@ impl DittoController {
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-connectivity", ditto),
+            self.ditto_image_name("ditto-connectivity", ditto),
             Some("connectivity-uri"),
             config_tracker,
             |_| {},
@@ -702,7 +545,7 @@ impl DittoController {
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-policies", ditto),
+            self.ditto_image_name("ditto-policies", ditto),
             Some("policies-uri"),
             config_tracker,
             |_| {},
@@ -719,7 +562,7 @@ impl DittoController {
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-things", ditto),
+            self.ditto_image_name("ditto-things", ditto),
             Some("things-uri"),
             config_tracker,
             |_| {},
@@ -736,7 +579,7 @@ impl DittoController {
         self.reconcile_default_deployment(
             ditto,
             deployment,
-            self.image_name("ditto-things-search", ditto),
+            self.ditto_image_name("ditto-things-search", ditto),
             Some("searchDB-uri"),
             config_tracker,
             |_| {},
@@ -871,31 +714,4 @@ fn keycloak_url(keycloak: &Keycloak, path: &str) -> String {
 
 fn keycloak_url_arg(arg: &str, keycloak: &Keycloak, path: &str) -> String {
     format!("{}={}", arg, keycloak_url(keycloak, path))
-}
-
-fn default_nginx_probes(port: &str, container: &mut Container) {
-    container.readiness_probe = Some(Probe {
-        initial_delay_seconds: Some(2),
-        period_seconds: Some(5),
-        timeout_seconds: Some(1),
-        failure_threshold: Some(3),
-        http_get: Some(HTTPGetAction {
-            port: IntOrString::String(port.to_string()),
-            path: Some("/".to_string()),
-            ..Default::default()
-        }),
-        ..Default::default()
-    });
-    container.liveness_probe = Some(Probe {
-        initial_delay_seconds: Some(2),
-        period_seconds: Some(5),
-        timeout_seconds: Some(3),
-        failure_threshold: Some(5),
-        http_get: Some(HTTPGetAction {
-            port: IntOrString::String(port.to_string()),
-            path: Some("/".to_string()),
-            ..Default::default()
-        }),
-        ..Default::default()
-    });
 }

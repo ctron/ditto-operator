@@ -25,6 +25,8 @@ use operator_framework::{
 use serde_json::json;
 use std::{collections::BTreeMap, ops::Deref};
 
+const CONTAINER_SWAGGER_UI: &str = "docker.io/swaggerapi/swagger-ui:v3.44.1";
+
 pub struct SwaggerUi<'a>(pub &'a super::Context);
 
 impl<'a> Deref for SwaggerUi<'a> {
@@ -252,5 +254,14 @@ impl<'a> SwaggerUi<'a> {
         })?;
 
         Ok(deployment)
+    }
+
+    fn swaggerui_image(&self, ditto: &Ditto) -> String {
+        ditto
+            .spec
+            .swagger_ui
+            .clone()
+            .and_then(|ui| ui.image)
+            .unwrap_or_else(|| CONTAINER_SWAGGER_UI.into())
     }
 }

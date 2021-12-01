@@ -48,6 +48,8 @@ pub struct DittoSpec {
     pub create_default_user: Option<bool>,
     /// Allow to override the Ditto image version.
     pub version: Option<String>,
+    /// Allow to override the Ditto container registry
+    pub registry: Option<String>,
     /// Enable and configure keycloak integration.
     pub keycloak: Option<Keycloak>,
 

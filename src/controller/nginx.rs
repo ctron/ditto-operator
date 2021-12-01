@@ -1,7 +1,6 @@
 use crate::{
     controller::{
-        default_nginx_probes, keycloak_url_arg, nginx, KUBERNETES_LABEL_COMPONENT, NGINX_IMAGE,
-        OPENSHIFT_ANNOTATION_CONNECT,
+        keycloak_url_arg, nginx, KUBERNETES_LABEL_COMPONENT, OPENSHIFT_ANNOTATION_CONNECT,
     },
     crd::Ditto,
     data,
@@ -9,8 +8,8 @@ use crate::{
 use k8s_openapi::{
     api::apps::v1::Deployment,
     api::core::v1::{
-        ConfigMapVolumeSource, EmptyDirVolumeSource, PodTemplateSpec, SecretVolumeSource,
-        ServicePort,
+        ConfigMapVolumeSource, Container, EmptyDirVolumeSource, HTTPGetAction, PodTemplateSpec,
+        Probe, SecretVolumeSource, ServicePort,
     },
     apimachinery::pkg::util::intstr::IntOrString,
 };
@@ -23,13 +22,14 @@ use operator_framework::{
             RemoveContainer,
         },
         meta::OwnedBy,
-        Delete,
     },
     process::create_or_update,
     tracker::{ConfigTracker, Trackable, TrackerState},
     utils::UseOrCreate,
 };
 use std::{collections::BTreeMap, ops::Deref};
+
+const NGINX_IMAGE: &str = "docker.io/library/nginx:mainline";
 
 pub struct Nginx<'a>(pub &'a super::Context);
 
@@ -60,7 +60,7 @@ impl<'a> Nginx<'a> {
                     // set labels
 
                     let mut labels = BTreeMap::new();
-                    labels.extend(self.service_selector("nginx", &ditto));
+                    labels.extend(self.service_selector("nginx", ditto));
                     spec.selector = Some(labels);
 
                     let target_port = match &ditto.spec.keycloak {
@@ -183,7 +183,7 @@ impl<'a> Nginx<'a> {
             &self.deployments,
             Some(&namespace),
             prefix.clone() + "-nginx",
-            |obj| self.reconcile_nginx_deployment(&ditto, obj, nginx_tracker.freeze()),
+            |obj| self.reconcile_nginx_deployment(ditto, obj, nginx_tracker.freeze()),
         )
         .await?;
 
@@ -450,4 +450,31 @@ where
     }
 
     Ok(())
+}
+
+fn default_nginx_probes(port: &str, container: &mut Container) {
+    container.readiness_probe = Some(Probe {
+        initial_delay_seconds: Some(2),
+        period_seconds: Some(5),
+        timeout_seconds: Some(1),
+        failure_threshold: Some(3),
+        http_get: Some(HTTPGetAction {
+            port: IntOrString::String(port.to_string()),
+            path: Some("/".to_string()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+    container.liveness_probe = Some(Probe {
+        initial_delay_seconds: Some(2),
+        period_seconds: Some(5),
+        timeout_seconds: Some(3),
+        failure_threshold: Some(5),
+        http_get: Some(HTTPGetAction {
+            port: IntOrString::String(port.to_string()),
+            path: Some("/".to_string()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
 }
