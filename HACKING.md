@@ -8,5 +8,6 @@
 
 ## Local build and installation
 
-    docker build . -t quay.io/ctrontesting/ditto-operator:latest
-    helm install ditto-operator ./helm/ditto-operator --set image.repository=quay.io/ctrontesting/ditto-operator --set image.tag=latest --set image.pullPolicy=Always --set openshift.enabled=true
+    docker build . -t quay.io/ctrontesting/ditto-operator:latest && docker push quay.io/ctrontesting/ditto-operator:latest
+    helm upgrade --install ditto-operator ./helm/ditto-operator --set image.repository=quay.io/ctrontesting/ditto-operator --set image.tag=latest --set openshift.enabled=true
+
