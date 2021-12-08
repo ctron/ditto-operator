@@ -47,6 +47,10 @@ pub struct DittoSpec {
     pub version: Option<String>,
     /// Allow to override the Ditto container registry
     pub registry: Option<String>,
+    /// Override the imagePullPolicy
+    ///
+    /// By default this will use Always if the image version is ":latest" and IfNotPresent otherwise
+    pub pull_policy: Option<String>,
     /// Enable and configure keycloak integration.
     pub keycloak: Option<Keycloak>,
 

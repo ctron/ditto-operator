@@ -661,7 +661,9 @@ impl DittoController {
             });
 
             spec.template.apply_container("service", |container| {
-                container.image = Some(image_name.to_string());
+                let image_name = image_name.to_string();
+                container.image_pull_policy = pull_policy(ditto, &image_name);
+                container.image = Some(image_name);
 
                 container.command(vec!["java"]);
 
@@ -763,6 +765,14 @@ fn keycloak_url(keycloak: &Keycloak, path: &str) -> String {
 
 fn keycloak_url_arg(arg: &str, keycloak: &Keycloak, path: &str) -> String {
     format!("{}={}", arg, keycloak_url(keycloak, path))
+}
+
+fn pull_policy<S: AsRef<str>>(ditto: &Ditto, image_name: S) -> Option<String> {
+    Some(match &ditto.spec.pull_policy {
+        Some(policy) => policy.to_string(),
+        None if image_name.as_ref().ends_with(":latest") => "Always".to_string(),
+        None => "IfNotPresent".to_string(),
+    })
 }
 
 pub trait Append<A> {
