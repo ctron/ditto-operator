@@ -442,6 +442,7 @@ spec:
                   description: Services configuration
                   properties:
                     concierge:
+                      default: {}
                       description: The concierge service
                       properties:
                         additionalProperties:
@@ -449,8 +450,19 @@ spec:
                             type: string
                           description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
                           type: object
+                        logLevel:
+                          description: Allow configuring the application log level.
+                          enum:
+                            - Trace
+                            - Debug
+                            - Info
+                            - Warning
+                            - Error
+                          nullable: true
+                          type: string
                       type: object
                     connectivity:
+                      default: {}
                       description: The connectivity service
                       properties:
                         additionalProperties:
@@ -458,8 +470,19 @@ spec:
                             type: string
                           description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
                           type: object
+                        logLevel:
+                          description: Allow configuring the application log level.
+                          enum:
+                            - Trace
+                            - Debug
+                            - Info
+                            - Warning
+                            - Error
+                          nullable: true
+                          type: string
                       type: object
                     gateway:
+                      default: {}
                       description: The gateway service
                       properties:
                         additionalProperties:
@@ -467,8 +490,19 @@ spec:
                             type: string
                           description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
                           type: object
+                        logLevel:
+                          description: Allow configuring the application log level.
+                          enum:
+                            - Trace
+                            - Debug
+                            - Info
+                            - Warning
+                            - Error
+                          nullable: true
+                          type: string
                       type: object
                     policies:
+                      default: {}
                       description: The policies service
                       properties:
                         additionalProperties:
@@ -476,8 +510,19 @@ spec:
                             type: string
                           description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
                           type: object
+                        logLevel:
+                          description: Allow configuring the application log level.
+                          enum:
+                            - Trace
+                            - Debug
+                            - Info
+                            - Warning
+                            - Error
+                          nullable: true
+                          type: string
                       type: object
                     things:
+                      default: {}
                       description: The things service
                       properties:
                         additionalProperties:
@@ -485,8 +530,19 @@ spec:
                             type: string
                           description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
                           type: object
+                        logLevel:
+                          description: Allow configuring the application log level.
+                          enum:
+                            - Trace
+                            - Debug
+                            - Info
+                            - Warning
+                            - Error
+                          nullable: true
+                          type: string
                       type: object
                     thingsSearch:
+                      default: {}
                       description: The things search service
                       properties:
                         additionalProperties:
@@ -494,14 +550,17 @@ spec:
                             type: string
                           description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
                           type: object
+                        logLevel:
+                          description: Allow configuring the application log level.
+                          enum:
+                            - Trace
+                            - Debug
+                            - Info
+                            - Warning
+                            - Error
+                          nullable: true
+                          type: string
                       type: object
-                  required:
-                    - concierge
-                    - connectivity
-                    - gateway
-                    - policies
-                    - things
-                    - thingsSearch
                   type: object
                 swaggerUi:
                   description: Influence some options of the hosted SwaggerUI.

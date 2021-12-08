@@ -85,16 +85,22 @@ pub struct DittoSpec {
 #[serde(rename_all = "camelCase")]
 pub struct Services {
     /// The concierge service
+    #[serde(default)]
     pub concierge: ServiceSpec,
     /// The connectivity service
+    #[serde(default)]
     pub connectivity: ServiceSpec,
     /// The gateway service
+    #[serde(default)]
     pub gateway: ServiceSpec,
     /// The policies service
+    #[serde(default)]
     pub policies: ServiceSpec,
     /// The things service
+    #[serde(default)]
     pub things: ServiceSpec,
     /// The things search service
+    #[serde(default)]
     pub things_search: ServiceSpec,
 }
 
@@ -108,6 +114,33 @@ pub struct ServiceSpec {
     #[serde(default)]
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub additional_properties: BTreeMap<String, String>,
+    /// Allow configuring the application log level.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log_level: Option<LogLevel>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, JsonSchema)]
+pub enum LogLevel {
+    Trace,
+    Debug,
+    Info,
+    #[serde(alias = "warn")]
+    Warning,
+    Error,
+}
+
+impl LogLevel {
+    pub fn into_value(self) -> String {
+        match self {
+            Self::Trace => "TRACE",
+            Self::Debug => "DEBUG",
+            Self::Info => "INFO",
+            Self::Warning => "WARN",
+            Self::Error => "ERROR",
+        }
+        .to_string()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
