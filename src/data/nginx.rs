@@ -16,6 +16,7 @@ pub fn nginx_conf<N: AsRef<str>>(
     swagger_ui: bool,
     oauth2: bool,
     expose_infra: bool,
+    expose_devops: bool,
     welcome: bool,
 ) -> String {
     let name = name.as_ref();
@@ -179,17 +180,7 @@ http {
       proxy_set_header              X-Forwarded-For     $proxy_add_x_forwarded_for;
       proxy_set_header              X-Forwarded-User    $remote_user;
     }}
-
-    # devops
-    location /devops {{
-      include nginx-cors.conf;
-      proxy_pass                    http://{name}-gateway/devops;
-      proxy_http_version            1.1;
-      proxy_set_header              Host                $http_host;
-      proxy_set_header              X-Real-IP           $remote_addr;
-      proxy_set_header              X-Forwarded-For     $proxy_add_x_forwarded_for;
-      proxy_set_header              X-Forwarded-User    $remote_user;
-    }}"#,
+    "#,
             name = name,
         )
         .as_str();
@@ -199,6 +190,21 @@ http {
     location ^~ /health/ {
       return 404;
     }
+"#;
+    }
+
+    if expose_devops {
+        result += r#"
+    # devops
+    location /devops {{
+      include nginx-cors.conf;
+      proxy_pass                    http://{name}-gateway/devops;
+      proxy_http_version            1.1;
+      proxy_set_header              Host                $http_host;
+      proxy_set_header              X-Real-IP           $remote_addr;
+      proxy_set_header              X-Forwarded-For     $proxy_add_x_forwarded_for;
+      proxy_set_header              X-Forwarded-User    $remote_user;
+    }}
 "#;
     }
 
@@ -254,7 +260,7 @@ http {
 }
 
 /// Provide the default index.html file
-pub fn nginx_default(oauth: bool, swagger: bool) -> String {
+pub fn nginx_default(oauth: bool, swagger: bool, expose_infra: bool) -> String {
     let html = include_str!("../resources/index.html");
 
     let login = match oauth {
@@ -280,6 +286,37 @@ pub fn nginx_default(oauth: bool, swagger: bool) -> String {
         <ul>
             <li><a href="/apidoc/2">API version 2</a></li>
         </ul>"#,
+            false => "",
+        },
+    );
+
+    let html = html.replace(
+        "@@HEALTH_HTML@@",
+        match expose_infra {
+            true => {
+                r#"
+    <h2 style="clear: both">Health</h2>
+    <div id="health-content">
+    </div>
+    <h2>Statistics</h2>
+    <div>
+        <div class="stats">
+            <span id="total-things-count" class="stats-count"></span><span
+                class="stats-count-text"> persisted <em>Things</em></span>
+        </div>
+        <div class="stats">
+            <span id="hot-things-count" class="stats-count"></span><span class="stats-count-text"> currently "hot" <em>Things</em> (accessed within the last 2 hours)</span>
+        </div>
+    </div>
+"#
+            }
+            false => "",
+        },
+    );
+    let html = html.replace(
+        "@@HEALTH_JS@@",
+        match expose_infra {
+            true => r#"<script>fetchHealth()</script>"#,
             false => "",
         },
     );

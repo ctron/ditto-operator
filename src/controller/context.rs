@@ -8,8 +8,7 @@ use k8s_openapi::api::{
 use kube::{Api, Client, ResourceExt};
 use log::debug;
 use operator_framework::utils::UseOrCreate;
-use std::collections::BTreeMap;
-use std::fmt::Display;
+use std::{collections::BTreeMap, fmt::Display};
 
 pub struct Context {
     pub client: Client,
@@ -49,6 +48,19 @@ impl Context {
             .swagger_ui
             .as_ref()
             .map(|ui| ui.disable)
+            .unwrap_or_default()
+    }
+
+    pub fn expose_infra(&self, ditto: &Ditto) -> bool {
+        !ditto.spec.disable_infra_proxy
+    }
+
+    pub fn expose_devops(&self, ditto: &Ditto) -> bool {
+        ditto
+            .spec
+            .devops
+            .as_ref()
+            .map(|devops| devops.expose)
             .unwrap_or_default()
     }
 

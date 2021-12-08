@@ -39,9 +39,6 @@ pub struct DittoSpec {
     #[serde(skip_serializing_if = "is_default")]
     pub disable_infra_proxy: bool,
 
-    /// Secure the devops status information.
-    #[serde(skip_serializing_if = "is_default")]
-    pub devops_secure_status: bool,
     /// Create the default "ditto" user when initially deploying.
     ///
     /// This has no effect when using OAuth2.
@@ -67,6 +64,29 @@ pub struct DittoSpec {
     ///
     /// If the field is missing, no ingress resource is being created.
     pub ingress: Option<IngressSpec>,
+
+    /// Devops endpoint
+    pub devops: Option<Devops>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Devops {
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<ValueOrReference>,
+
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_password: Option<ValueOrReference>,
+
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_default")]
+    pub insecure: bool,
+
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_default")]
+    pub expose: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
@@ -131,6 +151,7 @@ pub struct Keycloak {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+
     /// Description of this login option.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]

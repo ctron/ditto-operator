@@ -126,19 +126,7 @@
         @@LOGIN@@
         <p>&mdash; the Ditto team</p>
     </div>
-    <h2 style="clear: both">Health</h2>
-    <div id="health-content">
-    </div>
-    <h2>Statistics</h2>
-    <div>
-        <div class="stats">
-            <span id="total-things-count" class="stats-count"></span><span
-                class="stats-count-text"> persisted <em>Things</em></span>
-        </div>
-        <div class="stats">
-            <span id="hot-things-count" class="stats-count"></span><span class="stats-count-text"> currently "hot" <em>Things</em> (accessed within the last 2 hours)</span>
-        </div>
-    </div>
+    @@HEALTH_HTML@@
 </article>
 
 <script>
@@ -154,19 +142,6 @@
         });
     }
 
-    $.getJSON("/stats/search", function (data) {
-        let allThingsCount = data.allThingsCount;
-        update_count('#total-things-count', allThingsCount);
-    }).fail(function () {
-        update_count('#total-things-count', 0);
-    });
-    $.getJSON("/stats/things", function (data) {
-        let hotThings = data.hotThings;
-        update_count('#hot-things-count', hotThings);
-    }).fail(function () {
-        update_count('#hot-things-count', 0);
-    });
-
     function calcHealthStatusClass(status) {
         let healthStatusClass;
         if (status === "UP") {
@@ -179,40 +154,58 @@
         return healthStatusClass;
     }
 
-    $.getJSON("/status/health", function (data) {
-        const keysToIgnore = ['status', 'thing-cache-aware', 'dc-default', 'policy-cache-aware', 'blocked-namespaces-aware'];
-        let overallStatus = data.status;
-        $(`<p>
+    function fetchHealth() {
+
+        $.getJSON("/stats/search", function (data) {
+            let allThingsCount = data.allThingsCount;
+            update_count('#total-things-count', allThingsCount);
+        }).fail(function () {
+            update_count('#total-things-count', 0);
+        });
+        $.getJSON("/stats/things", function (data) {
+            let hotThings = data.hotThings;
+            update_count('#hot-things-count', hotThings);
+        }).fail(function () {
+            update_count('#hot-things-count', 0);
+        });
+
+        $.getJSON("/status/health", function (data) {
+            const keysToIgnore = ['status', 'thing-cache-aware', 'dc-default', 'policy-cache-aware', 'blocked-namespaces-aware'];
+            let overallStatus = data.status;
+            $(`<p>
             <span class="health-key"></span>
             <span class="health ${calcHealthStatusClass(overallStatus)}"></span>
             <span class="health-status">${overallStatus}</span>
         </p>`).appendTo("#health-content");
 
-        let items = [];
-        $.each(data.children, function (idx, child) {
-            if (keysToIgnore.includes(child.label)) {
-                // ignore
-            } else {
-                items.push(`<li>
+            let items = [];
+            $.each(data.children, function (idx, child) {
+                if (keysToIgnore.includes(child.label)) {
+                    // ignore
+                } else {
+                    items.push(`<li>
                     <span class="health-key">${child.label}:</span>
                     <span class="health ${calcHealthStatusClass(child.status)}"></span>
                     <span class="health-status">${child.status}</span>
                 </li>`);
-            }
-        });
+                }
+            });
 
-        $("<ul/>", {
-            "class": "health-list",
-            html: items.join("")
-        }).appendTo("#health-content");
-    }).fail(function () {
-        $(`<p>
+            $("<ul/>", {
+                "class": "health-list",
+                html: items.join("")
+            }).appendTo("#health-content");
+        }).fail(function () {
+            $(`<p>
             <span class="health-key"></span>
             <span class="health health-down"></span>
             <span class="health-status">COULD NOT BE DETERMINED</span>
         </p>`).appendTo("#health-content");
-    })
+        })
+    }
 </script>
+
+@@HEALTH_JS@@
 
 </body>
 </html>

@@ -24,6 +24,7 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 use context::Context;
+use indexmap::IndexMap;
 use k8s_openapi::{
     api::{
         apps::v1::Deployment,
@@ -150,31 +151,6 @@ impl DittoController {
         let mut gateway_tracker = ConfigTracker::new();
         let mut nginx_tracker = ConfigTracker::new();
 
-        create_or_update(
-            &self.secrets,
-            Some(&namespace),
-            prefix.clone() + "-gateway-secret",
-            |mut secret| {
-                secret.owned_by_controller(&ditto)?;
-                secret.data.use_or_create(|data| {
-                    data.entry("devops-password".into()).or_insert_with(|| {
-                        let pwd: String =
-                            thread_rng().sample_iter(&Alphanumeric).take(30).collect();
-                        ByteString(pwd.into())
-                    });
-                    data.entry("status-password".into()).or_insert_with(|| {
-                        let pwd: String =
-                            thread_rng().sample_iter(&Alphanumeric).take(30).collect();
-                        ByteString(pwd.into())
-                    });
-                    data.track_with(&mut ditto_tracker);
-                });
-
-                Ok::<_, anyhow::Error>(secret)
-            },
-        )
-        .await?;
-
         let reader = KubeReader::new(&self.configmaps, &self.secrets);
         let credentials = match (&ditto.spec.mongo_db.username, &ditto.spec.mongo_db.password) {
             (Some(username), Some(password)) => {
@@ -186,6 +162,61 @@ impl DittoController {
             }
             _ => "".to_string(),
         };
+
+        let devops_password = match ditto
+            .spec
+            .devops
+            .as_ref()
+            .and_then(|devops| devops.password.as_ref())
+        {
+            Some(password) => password.read_value(&reader).await?,
+            None => None,
+        };
+
+        let status_password = match ditto
+            .spec
+            .devops
+            .as_ref()
+            .and_then(|devops| devops.status_password.as_ref())
+        {
+            Some(password) => password.read_value(&reader).await?,
+            None => None,
+        };
+
+        create_or_update(
+            &self.secrets,
+            Some(&namespace),
+            prefix.clone() + "-gateway-secret",
+            |mut secret| {
+                secret.owned_by_controller(&ditto)?;
+                secret.data.use_or_create(|data| {
+                    if let Some(password) = devops_password {
+                        data.insert("devops-password".into(), ByteString(password.into()));
+                    } else {
+                        data.entry("devops-password".into()).or_insert_with(|| {
+                            let pwd: String =
+                                thread_rng().sample_iter(&Alphanumeric).take(30).collect();
+                            ByteString(pwd.into())
+                        });
+                    }
+                    if let Some(password) = status_password {
+                        data.insert("status-password".into(), ByteString(password.into()));
+                    } else {
+                        data.entry("status-password".into()).or_insert_with(|| {
+                            let pwd: String =
+                                thread_rng().sample_iter(&Alphanumeric).take(30).collect();
+                            ByteString(pwd.into())
+                        });
+                    }
+
+                    data.track_with(&mut ditto_tracker);
+                });
+
+                Ok::<_, anyhow::Error>(secret)
+            },
+        )
+        .await?;
+
         let database = match &ditto.spec.mongo_db.database {
             Some(database) => database.read_value(&reader).await?.unwrap_or_default(),
             None => "ditto".to_string(),
@@ -392,6 +423,7 @@ impl DittoController {
             self.ditto_image_name("ditto-concierge", ditto),
             Some("concierge-uri"),
             config_tracker,
+            default_system_properties(),
             |_| {},
             |_| {},
         )
@@ -405,12 +437,55 @@ impl DittoController {
     ) -> Result<Deployment> {
         let prefix = ditto.name();
 
+        let props = {
+            let mut props = IndexMap::new();
+            if let Some(keycloak) = &ditto.spec.keycloak {
+                let issuer_url = format!(
+                    "{url}/auth/realms/{realm}",
+                    url = keycloak.url,
+                    realm = keycloak.realm
+                );
+
+                // we need to insert this in the front, as `-D` is an argument for the JVM, not the application
+                if let Some(url) = issuer_url.strip_prefix("https://") {
+                    props.insert(
+                        "ditto.gateway.authentication.oauth.openid-connect-issuers.keycloak.issuer"
+                            .to_string(),
+                        url.to_string(),
+                    );
+                } else if let Some(url) = issuer_url.strip_prefix("http://") {
+                    props.insert(
+                        "ditto.gateway.authentication.oauth.openid-connect-issuers.keycloak.issuer"
+                            .to_string(),
+                        url.to_string(),
+                    );
+                    props.insert(
+                        "ditto.gateway.authentication.oauth.protocol".to_string(),
+                        "http".to_string(),
+                    );
+                } else {
+                    anyhow::bail!("Using a non-http(s) issuer URL with Ditto is not supported");
+                }
+                props.insert(
+                    "ditto.gateway.authentication.oauth.openid-connect-issuers.keycloak.auth-subjects.0".to_string(),
+                    "{{ jwt:sub }}".to_string()
+                );
+                props.insert(
+                    "ditto.gateway.authentication.oauth.openid-connect-issuers.keycloak.auth-subjects.1".to_string(),
+                    "{{ jwt:realm_access/roles }}".to_string()
+                );
+            }
+
+            props
+        };
+
         let mut deployment = self.reconcile_default_deployment(
             ditto,
             deployment,
             self.ditto_image_name("ditto-gateway", ditto),
             None,
             config_tracker,
+            default_system_properties().append(props),
             |_| {},
             |_| {},
         )?;
@@ -419,30 +494,24 @@ impl DittoController {
         deployment.remove_container_by_name("oauth-proxy");
 
         deployment.apply_container("service", |container| {
-            if let Some(keycloak) = &ditto.spec.keycloak {
-                let issuer_url = format!("{url}/auth/realms/{realm}", url=keycloak.url, realm=keycloak.realm);
-                container.args.use_or_create(|args| {
-                    // we need to insert this in the front, as `-D` is an argument for the JVM, not the application
-                    if let Some(url) = issuer_url.strip_prefix("https://") {
-                        args.insert(0, format!("-Dditto.gateway.authentication.oauth.openid-connect-issuers.keycloak.issuer={}", url));
-                    } else if let Some(url) = issuer_url.strip_prefix("http://") {
-                        args.insert(0, format!("-Dditto.gateway.authentication.oauth.openid-connect-issuers.keycloak.issuer={}", url));
-                        args.insert(0, "-Dditto.gateway.authentication.oauth.protocol=http".into());
-                    } else {
-                        anyhow::bail!("Using a non-http(s) issuer URL with Ditto is not supported");
-                    }
-
-                     Ok(())
-                 })?;
-            }
-
-            container.add_env("ENABLE_PRE_AUTHENTICATION", self.want_preaut(ditto).to_string())?;
             // deprecated variables
             container.drop_env("ENABLE_DUMMY_AUTH");
+            container.drop_env("DEVOPS_SECURE_STATUS");
 
             container.add_env(
-                "DEVOPS_SECURE_STATUS",
-                ditto.spec.devops_secure_status.to_string(),
+                "ENABLE_PRE_AUTHENTICATION",
+                self.want_preaut(ditto).to_string(),
+            )?;
+
+            container.add_env(
+                "DEVOPS_SECURED",
+                (!ditto
+                    .spec
+                    .devops
+                    .as_ref()
+                    .map(|devops| devops.insecure)
+                    .unwrap_or_default())
+                .to_string(),
             )?;
 
             container.add_env_from_secret(
@@ -474,6 +543,10 @@ impl DittoController {
             self.ditto_image_name("ditto-connectivity", ditto),
             Some("connectivity-uri"),
             config_tracker,
+            default_system_properties().append([(
+                "akka.cluster.distributed-data.durable.lmdb.dir".to_string(),
+                "/var/tmp/ditto/ddata".to_string(),
+            )]),
             |_| {},
             |_| {},
         )
@@ -491,6 +564,7 @@ impl DittoController {
             self.ditto_image_name("ditto-policies", ditto),
             Some("policies-uri"),
             config_tracker,
+            default_system_properties(),
             |_| {},
             |_| {},
         )
@@ -508,6 +582,7 @@ impl DittoController {
             self.ditto_image_name("ditto-things", ditto),
             Some("things-uri"),
             config_tracker,
+            default_system_properties(),
             |_| {},
             |_| {},
         )
@@ -525,23 +600,26 @@ impl DittoController {
             self.ditto_image_name("ditto-things-search", ditto),
             Some("searchDB-uri"),
             config_tracker,
+            default_system_properties(),
             |_| {},
             |_| {},
         )
     }
 
-    fn reconcile_default_deployment<S, L, A>(
+    fn reconcile_default_deployment<S, SP, L, A>(
         &self,
         ditto: &Ditto,
         mut deployment: Deployment,
         image_name: S,
         uri_key: Option<&str>,
         config_tracker: TrackerState,
+        add_system_properties: SP,
         add_labels: L,
         add_annotations: A,
     ) -> Result<Deployment>
     where
         S: ToString,
+        SP: IntoIterator<Item = (String, String)>,
         L: FnOnce(&mut BTreeMap<String, String>),
         A: FnOnce(&mut BTreeMap<String, String>),
     {
@@ -585,8 +663,11 @@ impl DittoController {
             spec.template.apply_container("service", |container| {
                 container.image = Some(image_name.to_string());
 
-                container.command(vec!["java"]); 
-                container.args(vec![ "-jar", "/opt/ditto/starter.jar"]);
+                container.command(vec!["java"]);
+
+                let mut args:Vec<_> = add_system_properties.into_iter().map(|(k,v)|format!("-D{}={}", k, v )).collect();
+                args.extend(["-jar".to_string(), "/opt/ditto/starter.jar".to_string()]);
+                container.args(args);
 
                 container.add_port("http", 8080, None)?;
                 container.add_port("remoting", 2551, None)?;
@@ -596,7 +677,7 @@ impl DittoController {
                 container.add_env("CLUSTER_BS_SERVICE_NAME", format!("{}-akka", prefix))?;
                 container.add_env("CLUSTER_BS_SERVICE_NAMESPACE", ditto.namespace().unwrap_or_default())?;
 
-                container.add_env("OPENJ9_JAVA_OPTIONS", "-XX:+ExitOnOutOfMemoryError -Xtune:virtualized -Xss512k -XX:MaxRAMPercentage=80 -XX:InitialRAMPercentage=40 -Dakka.coordinated-shutdown.exit-jvm=on -Dorg.mongodb.async.type=netty")?;
+                container.add_env("OPENJ9_JAVA_OPTIONS", "-XX:+ExitOnOutOfMemoryError -Xtune:virtualized -Xss512k -XX:MaxRAMPercentage=80 -XX:InitialRAMPercentage=40 -Dorg.mongodb.async.type=netty")?;
                 container.add_env("MONGO_DB_SSL_ENABLED", "false")?;
                 container.add_env_from_field_path("POD_NAMESPACE", "metadata.namespace")?;
                 container.add_env_from_field_path("INSTANCE_INDEX", "metadata.name")?;
@@ -646,6 +727,31 @@ impl DittoController {
     }
 }
 
+fn default_system_properties() -> IndexMap<String, String> {
+    let mut map = IndexMap::new();
+    map.insert(
+        "akka.cluster.failure-detector.threshold".to_string(),
+        "15.0".to_string(),
+    );
+    map.insert(
+        "akka.cluster.failure-detector.expected-response-after".to_string(),
+        "10s".to_string(),
+    );
+    map.insert(
+        "akka.cluster.failure-detector.acceptable-heartbeat-pause".to_string(),
+        "30s".to_string(),
+    );
+    map.insert(
+        "akka.cluster.shutdown-after-unsuccessful-join-seed-nodes".to_string(),
+        "120s".to_string(),
+    );
+    map.insert(
+        "akka.coordinated-shutdown.exit-jvm".to_string(),
+        "on".to_string(),
+    );
+    map
+}
+
 fn keycloak_url(keycloak: &Keycloak, path: &str) -> String {
     format!(
         "{url}/auth/realms/{realm}/protocol/openid-connect{path}",
@@ -657,4 +763,33 @@ fn keycloak_url(keycloak: &Keycloak, path: &str) -> String {
 
 fn keycloak_url_arg(arg: &str, keycloak: &Keycloak, path: &str) -> String {
     format!("{}={}", arg, keycloak_url(keycloak, path))
+}
+
+pub trait Append<A> {
+    fn append_one<T>(self, item: T) -> Self
+    where
+        T: Into<A>;
+    fn append<T>(self, iter: T) -> Self
+    where
+        T: IntoIterator<Item = A>;
+}
+
+impl<E, A> Append<A> for E
+where
+    E: Extend<A>,
+{
+    fn append_one<T>(mut self, item: T) -> Self
+    where
+        T: Into<A>,
+    {
+        self.extend([item.into()]);
+        self
+    }
+    fn append<T>(mut self, iter: T) -> Self
+    where
+        T: IntoIterator<Item = A>,
+    {
+        self.extend(iter);
+        self
+    }
 }

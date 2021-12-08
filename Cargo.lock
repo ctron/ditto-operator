@@ -191,6 +191,7 @@ dependencies = [
  "env_logger",
  "futures",
  "futures-util",
+ "indexmap",
  "k8s-openapi",
  "kube",
  "log",
@@ -204,7 +205,6 @@ dependencies = [
  "serde_yaml",
  "sha1",
  "snafu",
- "string-error",
  "tokio",
 ]
 
@@ -1335,12 +1335,6 @@ dependencies = [
  "libc",
  "winapi",
 ]
-
-[[package]]
-name = "string-error"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "439558b73299d7afdf52c36399c3c812cca10fe5ca08429f38815df5bacf3ef7"
 
 [[package]]
 name = "strsim"

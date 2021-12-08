@@ -19,7 +19,7 @@ use operator_framework::{
         config::{AppendBinary, AppendString},
         container::{
             ApplyContainer, ApplyEnvironmentVariable, ApplyPort, ApplyVolume, ApplyVolumeMount,
-            RemoveContainer,
+            DropVolume, DropVolumeMount, RemoveContainer,
         },
         meta::OwnedBy,
     },
@@ -94,7 +94,8 @@ impl<'a> Nginx<'a> {
                         prefix.clone(),
                         self.want_swagger(ditto),
                         ditto.spec.keycloak.is_some(),
-                        !ditto.spec.disable_infra_proxy,
+                        self.expose_infra(ditto),
+                        self.expose_devops(ditto),
                         self.want_welcome(ditto),
                     ),
                 );
@@ -149,7 +150,11 @@ impl<'a> Nginx<'a> {
                 // owned or not, we inject additional content to the configmap
                 cm.append_string(
                     "index.default.html",
-                    data::nginx_default(ditto.spec.keycloak.is_some(), self.want_swagger(ditto)),
+                    data::nginx_default(
+                        ditto.spec.keycloak.is_some(),
+                        self.want_swagger(ditto),
+                        self.expose_infra(ditto),
+                    ),
                 );
                 cm.append_string("index.json", "{}");
                 cm.append_string("ditto-up.svg", include_str!("../resources/ditto-up.svg"));
@@ -314,6 +319,12 @@ impl<'a> Nginx<'a> {
                     )
                     .with_sub_path("nginx.htpasswd"),
                 );
+            } else {
+                spec.template.drop_volume("nginx-htpasswd");
+                spec.template.apply_container("nginx", |container| {
+                    container.drop_volume_mount("nginx-htpasswd");
+                    Ok(())
+                })?;
             }
 
             nginx::apply_volumes(&volumes, &mut spec.template, "nginx")?;
