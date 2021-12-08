@@ -431,6 +431,78 @@ spec:
                   description: Allow to override the Ditto container registry
                   nullable: true
                   type: string
+                services:
+                  default:
+                    concierge: {}
+                    connectivity: {}
+                    gateway: {}
+                    policies: {}
+                    things: {}
+                    thingsSearch: {}
+                  description: Services configuration
+                  properties:
+                    concierge:
+                      description: The concierge service
+                      properties:
+                        additionalProperties:
+                          additionalProperties:
+                            type: string
+                          description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
+                          type: object
+                      type: object
+                    connectivity:
+                      description: The connectivity service
+                      properties:
+                        additionalProperties:
+                          additionalProperties:
+                            type: string
+                          description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
+                          type: object
+                      type: object
+                    gateway:
+                      description: The gateway service
+                      properties:
+                        additionalProperties:
+                          additionalProperties:
+                            type: string
+                          description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
+                          type: object
+                      type: object
+                    policies:
+                      description: The policies service
+                      properties:
+                        additionalProperties:
+                          additionalProperties:
+                            type: string
+                          description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
+                          type: object
+                      type: object
+                    things:
+                      description: The things service
+                      properties:
+                        additionalProperties:
+                          additionalProperties:
+                            type: string
+                          description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
+                          type: object
+                      type: object
+                    thingsSearch:
+                      description: The things search service
+                      properties:
+                        additionalProperties:
+                          additionalProperties:
+                            type: string
+                          description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
+                          type: object
+                      type: object
+                  required:
+                    - concierge
+                    - connectivity
+                    - gateway
+                    - policies
+                    - things
+                    - thingsSearch
+                  type: object
                 swaggerUi:
                   description: Influence some options of the hosted SwaggerUI.
                   nullable: true

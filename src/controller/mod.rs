@@ -18,6 +18,7 @@ mod nginx;
 mod rbac;
 mod swaggerui;
 
+use crate::crd::ServiceSpec;
 use crate::{
     controller::{ingress::Ingress, nginx::Nginx, rbac::Rbac, swaggerui::SwaggerUi},
     crd::{Ditto, Keycloak},
@@ -423,6 +424,7 @@ impl DittoController {
             self.ditto_image_name("ditto-concierge", ditto),
             Some("concierge-uri"),
             config_tracker,
+            &ditto.spec.services.concierge,
             default_system_properties(),
             |_| {},
             |_| {},
@@ -485,6 +487,7 @@ impl DittoController {
             self.ditto_image_name("ditto-gateway", ditto),
             None,
             config_tracker,
+            &ditto.spec.services.gateway,
             default_system_properties().append(props),
             |_| {},
             |_| {},
@@ -543,6 +546,7 @@ impl DittoController {
             self.ditto_image_name("ditto-connectivity", ditto),
             Some("connectivity-uri"),
             config_tracker,
+            &ditto.spec.services.connectivity,
             default_system_properties().append([(
                 "akka.cluster.distributed-data.durable.lmdb.dir".to_string(),
                 "/var/tmp/ditto/ddata".to_string(),
@@ -564,6 +568,7 @@ impl DittoController {
             self.ditto_image_name("ditto-policies", ditto),
             Some("policies-uri"),
             config_tracker,
+            &ditto.spec.services.policies,
             default_system_properties(),
             |_| {},
             |_| {},
@@ -582,6 +587,7 @@ impl DittoController {
             self.ditto_image_name("ditto-things", ditto),
             Some("things-uri"),
             config_tracker,
+            &ditto.spec.services.things,
             default_system_properties(),
             |_| {},
             |_| {},
@@ -600,6 +606,7 @@ impl DittoController {
             self.ditto_image_name("ditto-things-search", ditto),
             Some("searchDB-uri"),
             config_tracker,
+            &ditto.spec.services.things_search,
             default_system_properties(),
             |_| {},
             |_| {},
@@ -613,6 +620,7 @@ impl DittoController {
         image_name: S,
         uri_key: Option<&str>,
         config_tracker: TrackerState,
+        service_spec: &ServiceSpec,
         add_system_properties: SP,
         add_labels: L,
         add_annotations: A,
@@ -667,7 +675,10 @@ impl DittoController {
 
                 container.command(vec!["java"]);
 
-                let mut args:Vec<_> = add_system_properties.into_iter().map(|(k,v)|format!("-D{}={}", k, v )).collect();
+                let mut args:Vec<_> = add_system_properties.into_iter()
+                    .chain(service_spec.additional_properties.clone().into_iter())
+                    .map(|(k,v)|format!("-D{}={}", k, v )).collect();
+
                 args.extend(["-jar".to_string(), "/opt/ditto/starter.jar".to_string()]);
                 container.args(args);
 

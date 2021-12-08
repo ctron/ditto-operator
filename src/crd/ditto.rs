@@ -10,11 +10,15 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
-use k8s_openapi::chrono::{DateTime, Utc};
+use k8s_openapi::{
+    apimachinery::pkg::apis::meta::v1::Condition,
+    chrono::{DateTime, Utc},
+};
 use kube::CustomResource;
-use operator_framework::conditions::{Conditions, StateDetails};
-use operator_framework::install::ValueOrReference;
+use operator_framework::{
+    conditions::{Conditions, StateDetails},
+    install::ValueOrReference,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -71,6 +75,39 @@ pub struct DittoSpec {
 
     /// Devops endpoint
     pub devops: Option<Devops>,
+
+    /// Services configuration
+    #[serde(default)]
+    pub services: Services,
+}
+
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Services {
+    /// The concierge service
+    pub concierge: ServiceSpec,
+    /// The connectivity service
+    pub connectivity: ServiceSpec,
+    /// The gateway service
+    pub gateway: ServiceSpec,
+    /// The policies service
+    pub policies: ServiceSpec,
+    /// The things service
+    pub things: ServiceSpec,
+    /// The things search service
+    pub things_search: ServiceSpec,
+}
+
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceSpec {
+    /// Additional system properties, which will be appended to the list of system properties.
+    ///
+    /// Note: Setting arbitrary system properties may break the deployment and may also not be
+    /// compatible with future versions.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub additional_properties: BTreeMap<String, String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
