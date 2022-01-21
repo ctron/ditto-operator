@@ -872,7 +872,7 @@ dependencies = [
 [[package]]
 name = "operator-framework"
 version = "0.6.0"
-source = "git+https://github.com/ctron/operator-framework?rev=6818edb2f9297bc3f5ce59bacd3277c30181c1ea#6818edb2f9297bc3f5ce59bacd3277c30181c1ea"
+source = "git+https://github.com/ctron/operator-framework?rev=d586267ca51a38c32c5ca90cabf2b5807fa2003e#d586267ca51a38c32c5ca90cabf2b5807fa2003e"
 dependencies = [
  "anyhow",
  "async-trait",
