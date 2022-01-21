@@ -58,6 +58,10 @@ pub struct DittoSpec {
     /// Enable and configure keycloak integration.
     pub keycloak: Option<Keycloak>,
 
+    /// Provide additional OAuth configuration
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<OAuth>,
+
     /// Influence some options of the hosted OpenAPI spec.
     pub open_api: Option<OpenApi>,
 
@@ -230,6 +234,21 @@ pub struct Keycloak {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuth {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub issuers: BTreeMap<String, OAuthIssuer>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthIssuer {
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subjects: Vec<String>,
 }
 
 fn is_default<T: Default + Eq>(value: &T) -> bool {

@@ -93,7 +93,7 @@ impl<'a> Nginx<'a> {
                     data::nginx_conf(
                         prefix.clone(),
                         self.want_swagger(ditto),
-                        ditto.spec.keycloak.is_some(),
+                        self.has_oauth(ditto),
                         self.expose_infra(ditto),
                         self.expose_devops(ditto),
                         self.want_welcome(ditto),
@@ -151,7 +151,7 @@ impl<'a> Nginx<'a> {
                 cm.append_string(
                     "index.default.html",
                     data::nginx_default(
-                        ditto.spec.keycloak.is_some(),
+                        self.has_oauth(ditto),
                         self.want_swagger(ditto),
                         self.expose_infra(ditto),
                     ),

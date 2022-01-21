@@ -415,6 +415,24 @@ spec:
                           type: string
                       type: object
                   type: object
+                oauth:
+                  description: Provide additional OAuth configuration
+                  nullable: true
+                  properties:
+                    issuers:
+                      additionalProperties:
+                        properties:
+                          subjects:
+                            items:
+                              type: string
+                            type: array
+                          url:
+                            type: string
+                        required:
+                          - url
+                        type: object
+                      type: object
+                  type: object
                 openApi:
                   description: Influence some options of the hosted OpenAPI spec.
                   nullable: true

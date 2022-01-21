@@ -18,7 +18,7 @@ mod nginx;
 mod rbac;
 mod swaggerui;
 
-use crate::crd::ServiceSpec;
+use crate::crd::{OAuthIssuer, ServiceSpec};
 use crate::{
     controller::{ingress::Ingress, nginx::Nginx, rbac::Rbac, swaggerui::SwaggerUi},
     crd::{Ditto, Keycloak},
@@ -258,31 +258,33 @@ impl DittoController {
             .process(&ditto, service_account_name.clone())
             .await?;
 
-        if ditto.spec.keycloak.is_some() {
-            create_or_update(
-                &self.secrets,
-                Some(&namespace),
-                prefix.clone() + "-oauth",
-                |mut secret| {
-                    secret.owned_by_controller(&ditto)?;
-                    secret.init_string_from("cookie.secret", || {
-                        thread_rng()
-                            .sample_iter(&Alphanumeric)
-                            .take(32)
-                            .map(char::from)
-                            .collect::<String>()
-                    });
-                    secret.track_with(&mut gateway_tracker);
-                    Ok::<_, anyhow::Error>(secret)
-                },
-            )
-            .await?;
-        } else {
-            self.secrets
-                .delete_optionally(&(prefix.clone() + "-oauth"), &DeleteParams::default())
+        match &ditto.spec.keycloak {
+            Some(keycloak) if !keycloak.disable_proxy => {
+                create_or_update(
+                    &self.secrets,
+                    Some(&namespace),
+                    prefix.clone() + "-oauth",
+                    |mut secret| {
+                        secret.owned_by_controller(&ditto)?;
+                        secret.init_string_from("cookie.secret", || {
+                            thread_rng()
+                                .sample_iter(&Alphanumeric)
+                                .take(32)
+                                .map(char::from)
+                                .collect::<String>()
+                        });
+                        secret.track_with(&mut gateway_tracker);
+                        Ok::<_, anyhow::Error>(secret)
+                    },
+                )
                 .await?;
+            }
+            _ => {
+                self.secrets
+                    .delete_optionally(&(prefix.clone() + "-oauth"), &DeleteParams::default())
+                    .await?;
+            }
         }
-
         let ditto_tracker = ditto_tracker.freeze();
 
         // extend the gateway tracker with the ditto tracker
@@ -439,47 +441,33 @@ impl DittoController {
     ) -> Result<Deployment> {
         let prefix = ditto.name();
 
-        let props = {
-            let mut props = IndexMap::new();
-            if let Some(keycloak) = &ditto.spec.keycloak {
-                let issuer_url = format!(
-                    "{url}/auth/realms/{realm}",
-                    url = keycloak.url,
-                    realm = keycloak.realm
-                );
+        let mut issuers = ditto
+            .spec
+            .oauth
+            .as_ref()
+            .map_or_else(BTreeMap::new, |o| o.issuers.clone());
 
-                // we need to insert this in the front, as `-D` is an argument for the JVM, not the application
-                if let Some(url) = issuer_url.strip_prefix("https://") {
-                    props.insert(
-                        "ditto.gateway.authentication.oauth.openid-connect-issuers.keycloak.issuer"
-                            .to_string(),
-                        url.to_string(),
-                    );
-                } else if let Some(url) = issuer_url.strip_prefix("http://") {
-                    props.insert(
-                        "ditto.gateway.authentication.oauth.openid-connect-issuers.keycloak.issuer"
-                            .to_string(),
-                        url.to_string(),
-                    );
-                    props.insert(
-                        "ditto.gateway.authentication.oauth.protocol".to_string(),
-                        "http".to_string(),
-                    );
-                } else {
-                    anyhow::bail!("Using a non-http(s) issuer URL with Ditto is not supported");
-                }
-                props.insert(
-                    "ditto.gateway.authentication.oauth.openid-connect-issuers.keycloak.auth-subjects.0".to_string(),
-                    "{{ jwt:sub }}".to_string()
-                );
-                props.insert(
-                    "ditto.gateway.authentication.oauth.openid-connect-issuers.keycloak.auth-subjects.1".to_string(),
-                    "{{ jwt:realm_access/roles }}".to_string()
-                );
-            }
+        if let Some(keycloak) = &ditto.spec.keycloak {
+            let url = format!(
+                "{url}/auth/realms/{realm}",
+                url = keycloak.url,
+                realm = keycloak.realm
+            );
+            issuers.insert(
+                "keycloak".to_string(),
+                OAuthIssuer {
+                    url,
+                    subjects: vec![
+                        "{{ jwt:sub }}".to_string(),
+                        "{{ jwt:realm_access/roles }}".to_string(),
+                    ],
+                },
+            );
+        }
 
-            props
-        };
+        let mut props = IndexMap::new();
+
+        Self::apply_oauth_properties(&mut props, issuers)?;
 
         let mut deployment = self.reconcile_default_deployment(
             ditto,
@@ -738,6 +726,67 @@ impl DittoController {
             }),
             ..Default::default()
         });
+        Ok(())
+    }
+
+    /// Convert OAuth issuers into system properties.
+    fn apply_oauth_properties(
+        props: &mut IndexMap<String, String>,
+        issuers: BTreeMap<String, OAuthIssuer>,
+    ) -> anyhow::Result<()> {
+        let mut using_http: Option<bool> = None;
+        for (key, issuer) in issuers {
+            // we need to insert this in the front, as `-D` is an argument for the JVM, not the application
+            if let Some(url) = issuer.url.strip_prefix("https://") {
+                props.insert(
+                    format!(
+                        "ditto.gateway.authentication.oauth.openid-connect-issuers.{key}.issuer",
+                        key = key
+                    ),
+                    url.to_string(),
+                );
+
+                match using_http {
+                    None => {
+                        using_http = Some(false);
+                    }
+                    Some(false) => {}
+                    Some(true) => {
+                        anyhow::bail!("Cannot mix HTTP and HTTPS OAuth issuer");
+                    }
+                }
+            } else if let Some(url) = issuer.url.strip_prefix("http://") {
+                props.insert(
+                    format!(
+                        "ditto.gateway.authentication.oauth.openid-connect-issuers.{key}.issuer",
+                        key = key
+                    ),
+                    url.to_string(),
+                );
+                match using_http {
+                    None => {
+                        props.insert(
+                            "ditto.gateway.authentication.oauth.protocol".to_string(),
+                            "http".to_string(),
+                        );
+                        using_http = Some(true);
+                    }
+                    Some(true) => {}
+                    Some(false) => {
+                        anyhow::bail!("Cannot mix HTTP and HTTPS OAuth issuer");
+                    }
+                }
+            } else {
+                anyhow::bail!("Using a non-http(s) issuer URL with Ditto is not supported");
+            }
+
+            for (i, subject) in issuer.subjects.into_iter().enumerate() {
+                props.insert(
+                    format!("ditto.gateway.authentication.oauth.openid-connect-issuers.{key}.auth-subjects.{idx}", key=key, idx = i),
+                    subject,
+                );
+            }
+        }
         Ok(())
     }
 }

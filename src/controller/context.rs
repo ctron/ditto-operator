@@ -35,7 +35,7 @@ impl Context {
     }
 
     pub fn want_preaut(&self, ditto: &Ditto) -> bool {
-        ditto.spec.keycloak.is_none()
+        !self.has_oauth(ditto)
     }
 
     pub fn want_welcome(&self, ditto: &Ditto) -> bool {
@@ -49,6 +49,15 @@ impl Context {
             .as_ref()
             .map(|ui| ui.disable)
             .unwrap_or_default()
+    }
+
+    pub fn has_oauth(&self, ditto: &Ditto) -> bool {
+        ditto.spec.keycloak.is_some()
+            || ditto
+                .spec
+                .oauth
+                .as_ref()
+                .map_or_else(|| false, |o| !o.issuers.is_empty())
     }
 
     pub fn expose_infra(&self, ditto: &Ditto) -> bool {
