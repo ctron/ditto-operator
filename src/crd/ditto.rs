@@ -10,6 +10,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
+use k8s_openapi::api::core::v1::ResourceRequirements;
 use k8s_openapi::{
     apimachinery::pkg::apis::meta::v1::Condition,
     chrono::{DateTime, Utc},
@@ -111,6 +112,12 @@ pub struct Services {
 #[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceSpec {
+    /// Number of replicas. Defaults to one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replicas: Option<u32>,
+
+    /// Service resource limits
+    pub resources: Option<ResourceRequirements>,
     /// Additional system properties, which will be appended to the list of system properties.
     ///
     /// Note: Setting arbitrary system properties may break the deployment and may also not be

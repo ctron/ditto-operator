@@ -26,6 +26,8 @@ use crate::{
 use anyhow::{anyhow, Result};
 use context::Context;
 use indexmap::IndexMap;
+use k8s_openapi::api::core::v1::ResourceRequirements;
+use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::{
     api::{
         apps::v1::Deployment,
@@ -44,7 +46,7 @@ use operator_framework::{
         config::AppendString,
         container::{
             ApplyContainer, ApplyEnvironmentVariable, ApplyPort, RemoveContainer, SetArgs,
-            SetCommand, SetResources,
+            SetCommand,
         },
         meta::OwnedBy,
         Delete, KubeReader,
@@ -652,6 +654,14 @@ impl DittoController {
                 });
             });
 
+            spec.replicas = service_spec.replicas.map(|i| {
+                if i > i32::MAX as u32 {
+                    i32::MAX
+                } else {
+                    i as i32
+                }
+            });
+
             spec.template.spec.use_or_create(|template_spec| {
                 template_spec.service_account_name = Some(prefix.clone());
             });
@@ -686,7 +696,7 @@ impl DittoController {
                 container.add_env_from_field_path("INSTANCE_INDEX", "metadata.name")?;
                 container.add_env_from_field_path("HOSTNAME", "status.podIP")?;
 
-                container.set_resources("memory", Some("1Gi"), Some("1Gi"));
+                container.resources = Some(service_spec.clone().resources.unwrap_or_else(||default_resources(Some("1Gi"), None)));
 
                 if let Some(uri_key) = uri_key {
                     container.add_env_from_secret("MONGO_DB_URI", prefix + "-mongodb-secret", uri_key)?;
@@ -863,5 +873,21 @@ where
     {
         self.extend(iter);
         self
+    }
+}
+
+fn default_resources(memory: Option<&str>, cpu: Option<&str>) -> ResourceRequirements {
+    let mut spec = BTreeMap::new();
+
+    if let Some(memory) = memory {
+        spec.insert("memory".into(), Quantity(memory.into()));
+    }
+    if let Some(cpu) = cpu {
+        spec.insert("cpu".into(), Quantity(cpu.into()));
+    }
+
+    ResourceRequirements {
+        limits: Some(spec.clone()),
+        requests: Some(spec),
     }
 }
