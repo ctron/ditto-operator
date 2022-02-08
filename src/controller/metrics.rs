@@ -1,3 +1,3 @@
-pub const fn default_prometheus_port() -> u16 {
+pub const fn default_prometheus_port() -> i32 {
     9095
 }

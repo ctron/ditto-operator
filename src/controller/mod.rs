@@ -700,10 +700,13 @@ impl DittoController {
 
                 if ditto.spec.metrics.enabled {
                     container.add_env("PROMETHEUS_PORT", format!("{}", default_prometheus_port()))?;
+                    container.add_port("metrics", default_prometheus_port(), None)?;
                 } else {
                     container.drop_env("PROMETHEUS_PORT");
+                    if let Some(ports) = &mut container.ports {
+                        ports.retain(|p| p.name.as_deref() != Some("metrics"));
+                    }
                 }
-
 
                 container.resources = Some(service_spec.clone().resources.unwrap_or_else(||default_resources(Some("1Gi"), None)));
 
