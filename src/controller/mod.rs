@@ -14,10 +14,12 @@
 mod context;
 mod ditto;
 mod ingress;
+mod metrics;
 mod nginx;
 mod rbac;
 mod swaggerui;
 
+use crate::controller::metrics::default_prometheus_port;
 use crate::crd::{OAuthIssuer, ServiceSpec};
 use crate::{
     controller::{ingress::Ingress, nginx::Nginx, rbac::Rbac, swaggerui::SwaggerUi},
@@ -695,6 +697,13 @@ impl DittoController {
                 container.add_env_from_field_path("POD_NAMESPACE", "metadata.namespace")?;
                 container.add_env_from_field_path("INSTANCE_INDEX", "metadata.name")?;
                 container.add_env_from_field_path("HOSTNAME", "status.podIP")?;
+
+                if ditto.spec.metrics.enabled {
+                    container.add_env("PROMETHEUS_PORT", format!("{}", default_prometheus_port()))?;
+                } else {
+                    container.drop_env("PROMETHEUS_PORT");
+                }
+
 
                 container.resources = Some(service_spec.clone().resources.unwrap_or_else(||default_resources(Some("1Gi"), None)));
 

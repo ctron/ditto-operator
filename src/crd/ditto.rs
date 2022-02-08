@@ -84,6 +84,17 @@ pub struct DittoSpec {
     /// Services configuration
     #[serde(default)]
     pub services: Services,
+
+    #[serde(default)]
+    pub metrics: Metrics,
+}
+
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Metrics {
+    /// Enable metrics integration
+    #[serde(default)]
+    pub enabled: bool,
 }
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, JsonSchema)]

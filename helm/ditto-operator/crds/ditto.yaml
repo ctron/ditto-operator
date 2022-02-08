@@ -267,6 +267,15 @@ spec:
                     - realm
                     - url
                   type: object
+                metrics:
+                  default:
+                    enabled: false
+                  properties:
+                    enabled:
+                      default: false
+                      description: Enable metrics integration
+                      type: boolean
+                  type: object
                 mongoDb:
                   default:
                     host: mongodb
