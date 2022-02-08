@@ -653,6 +653,7 @@ impl DittoController {
                 metadata.annotations.use_or_create(|annotations| {
                     annotations
                         .insert("ditto.iot.eclipse.org/config-hash".into(), config_tracker.0);
+                    metrics::add_annotations(&ditto, annotations);
                 });
             });
 

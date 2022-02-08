@@ -1,4 +1,4 @@
-use crate::{controller::metrics::default_prometheus_port, crd::Ditto};
+use crate::crd::Ditto;
 use k8s_openapi::api::{
     apps::v1::Deployment,
     core::v1::{ConfigMap, Secret, Service, ServiceAccount},
@@ -184,19 +184,11 @@ impl Context {
 
         // add annotations
 
-        let mut annotations = BTreeMap::new();
-
-        if ditto.spec.metrics.enabled {
-            annotations.insert("prometheus.io/scrape".to_string(), "true".to_string());
-            annotations.insert("prometheus.io/path".to_string(), "/".to_string());
-            annotations.insert(
-                "prometheus.io/port".to_string(),
-                format!("{}", default_prometheus_port()),
-            );
-        }
-
-        add_annotations(&mut annotations);
-
-        deployment.metadata.annotations = Some(annotations);
+        deployment
+            .metadata
+            .annotations
+            .use_or_create(|annotations| {
+                add_annotations(annotations);
+            });
     }
 }
