@@ -143,9 +143,11 @@ pub struct ServiceSpec {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub enum LogLevel {
     Trace,
     Debug,
+    #[serde(alias = "information")]
     Info,
     #[serde(alias = "warn")]
     Warning,
