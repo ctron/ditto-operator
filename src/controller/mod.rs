@@ -553,7 +553,7 @@ impl DittoController {
             Some("connectivity-uri"),
             config_tracker,
             &ditto.spec.services.connectivity,
-            Default::default(),
+            envs,
             default_system_properties().append([(
                 "akka.cluster.distributed-data.durable.lmdb.dir".to_string(),
                 "/var/tmp/ditto/ddata".to_string(),
