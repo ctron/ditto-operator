@@ -691,7 +691,8 @@ impl DittoController {
                 container.add_env("CLUSTER_BS_SERVICE_NAME", format!("{}-akka", prefix))?;
                 container.add_env("CLUSTER_BS_SERVICE_NAMESPACE", ditto.namespace().unwrap_or_default())?;
 
-                container.set_env("LOG_LEVEL_APPLICATION", service_spec.log_level.map(|l|l.into_value()))?;
+                container.set_env("LOG_LEVEL_APPLICATION", service_spec.app_log_level.or_else(||service_spec.log_level).map(|l|l.into_value()))?;
+                container.set_env("LOG_LEVEL", service_spec.root_log_level.or_else(||service_spec.log_level).map(|l|l.into_value()))?;
 
                 container.add_env("OPENJ9_JAVA_OPTIONS", "-XX:+ExitOnOutOfMemoryError -Xtune:virtualized -Xss512k -XX:MaxRAMPercentage=80 -XX:InitialRAMPercentage=40 -Dorg.mongodb.async.type=netty")?;
                 container.add_env("MONGO_DB_SSL_ENABLED", "false")?;

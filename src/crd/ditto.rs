@@ -136,10 +136,18 @@ pub struct ServiceSpec {
     #[serde(default)]
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub additional_properties: BTreeMap<String, String>,
-    /// Allow configuring the application log level.
+    /// Allow configuring all log levels.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log_level: Option<LogLevel>,
+    /// Allow configuring the application log level.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_log_level: Option<LogLevel>,
+    /// Allow configuring the root log level.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_log_level: Option<LogLevel>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, JsonSchema)]
@@ -149,8 +157,8 @@ pub enum LogLevel {
     Debug,
     #[serde(alias = "information")]
     Info,
-    #[serde(alias = "warn")]
-    Warning,
+    #[serde(alias = "warning")]
+    Warn,
     Error,
 }
 
@@ -160,7 +168,7 @@ impl LogLevel {
             Self::Trace => "TRACE",
             Self::Debug => "DEBUG",
             Self::Info => "INFO",
-            Self::Warning => "WARN",
+            Self::Warn => "WARN",
             Self::Error => "ERROR",
         }
         .to_string()

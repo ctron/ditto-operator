@@ -487,11 +487,11 @@ spec:
                         logLevel:
                           description: Allow configuring the application log level.
                           enum:
-                            - Trace
-                            - Debug
-                            - Info
-                            - Warning
-                            - Error
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
                           nullable: true
                           type: string
                         replicas:
@@ -531,11 +531,11 @@ spec:
                         logLevel:
                           description: Allow configuring the application log level.
                           enum:
-                            - Trace
-                            - Debug
-                            - Info
-                            - Warning
-                            - Error
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
                           nullable: true
                           type: string
                         replicas:
@@ -575,11 +575,11 @@ spec:
                         logLevel:
                           description: Allow configuring the application log level.
                           enum:
-                            - Trace
-                            - Debug
-                            - Info
-                            - Warning
-                            - Error
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
                           nullable: true
                           type: string
                         replicas:
@@ -619,11 +619,11 @@ spec:
                         logLevel:
                           description: Allow configuring the application log level.
                           enum:
-                            - Trace
-                            - Debug
-                            - Info
-                            - Warning
-                            - Error
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
                           nullable: true
                           type: string
                         replicas:
@@ -663,11 +663,11 @@ spec:
                         logLevel:
                           description: Allow configuring the application log level.
                           enum:
-                            - Trace
-                            - Debug
-                            - Info
-                            - Warning
-                            - Error
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
                           nullable: true
                           type: string
                         replicas:
@@ -707,11 +707,11 @@ spec:
                         logLevel:
                           description: Allow configuring the application log level.
                           enum:
-                            - Trace
-                            - Debug
-                            - Info
-                            - Warning
-                            - Error
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
                           nullable: true
                           type: string
                         replicas:
