@@ -85,8 +85,18 @@ pub struct DittoSpec {
     #[serde(default)]
     pub services: Services,
 
+    /// Metrics configuration
     #[serde(default)]
     pub metrics: Metrics,
+
+    /// Kafka options
+    pub kafka: Option<Kafka>,
+}
+
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Kafka {
+    pub consumer_throttling_limit: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, JsonSchema)]

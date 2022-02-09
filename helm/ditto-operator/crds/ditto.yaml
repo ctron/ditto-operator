@@ -151,6 +151,16 @@ spec:
                   required:
                     - host
                   type: object
+                kafka:
+                  description: Kafka options
+                  nullable: true
+                  properties:
+                    consumerThrottlingLimit:
+                      format: uint32
+                      minimum: 0.0
+                      nullable: true
+                      type: integer
+                  type: object
                 keycloak:
                   description: Enable and configure keycloak integration.
                   nullable: true
@@ -270,6 +280,7 @@ spec:
                 metrics:
                   default:
                     enabled: false
+                  description: Metrics configuration
                   properties:
                     enabled:
                       default: false
@@ -484,8 +495,18 @@ spec:
                             type: string
                           description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
                           type: object
-                        logLevel:
+                        appLogLevel:
                           description: Allow configuring the application log level.
+                          enum:
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
+                          nullable: true
+                          type: string
+                        logLevel:
+                          description: Allow configuring all log levels.
                           enum:
                             - trace
                             - debug
@@ -517,6 +538,16 @@ spec:
                               description: "Requests describes the minimum amount of compute resources required. If Requests is omitted for a container, it defaults to Limits if that is explicitly specified, otherwise to an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/"
                               type: object
                           type: object
+                        rootLogLevel:
+                          description: Allow configuring the root log level.
+                          enum:
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
+                          nullable: true
+                          type: string
                       type: object
                     connectivity:
                       default:
@@ -528,8 +559,18 @@ spec:
                             type: string
                           description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
                           type: object
-                        logLevel:
+                        appLogLevel:
                           description: Allow configuring the application log level.
+                          enum:
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
+                          nullable: true
+                          type: string
+                        logLevel:
+                          description: Allow configuring all log levels.
                           enum:
                             - trace
                             - debug
@@ -561,6 +602,16 @@ spec:
                               description: "Requests describes the minimum amount of compute resources required. If Requests is omitted for a container, it defaults to Limits if that is explicitly specified, otherwise to an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/"
                               type: object
                           type: object
+                        rootLogLevel:
+                          description: Allow configuring the root log level.
+                          enum:
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
+                          nullable: true
+                          type: string
                       type: object
                     gateway:
                       default:
@@ -572,8 +623,18 @@ spec:
                             type: string
                           description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
                           type: object
-                        logLevel:
+                        appLogLevel:
                           description: Allow configuring the application log level.
+                          enum:
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
+                          nullable: true
+                          type: string
+                        logLevel:
+                          description: Allow configuring all log levels.
                           enum:
                             - trace
                             - debug
@@ -605,6 +666,16 @@ spec:
                               description: "Requests describes the minimum amount of compute resources required. If Requests is omitted for a container, it defaults to Limits if that is explicitly specified, otherwise to an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/"
                               type: object
                           type: object
+                        rootLogLevel:
+                          description: Allow configuring the root log level.
+                          enum:
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
+                          nullable: true
+                          type: string
                       type: object
                     policies:
                       default:
@@ -616,8 +687,18 @@ spec:
                             type: string
                           description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
                           type: object
-                        logLevel:
+                        appLogLevel:
                           description: Allow configuring the application log level.
+                          enum:
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
+                          nullable: true
+                          type: string
+                        logLevel:
+                          description: Allow configuring all log levels.
                           enum:
                             - trace
                             - debug
@@ -649,6 +730,16 @@ spec:
                               description: "Requests describes the minimum amount of compute resources required. If Requests is omitted for a container, it defaults to Limits if that is explicitly specified, otherwise to an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/"
                               type: object
                           type: object
+                        rootLogLevel:
+                          description: Allow configuring the root log level.
+                          enum:
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
+                          nullable: true
+                          type: string
                       type: object
                     things:
                       default:
@@ -660,8 +751,18 @@ spec:
                             type: string
                           description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
                           type: object
-                        logLevel:
+                        appLogLevel:
                           description: Allow configuring the application log level.
+                          enum:
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
+                          nullable: true
+                          type: string
+                        logLevel:
+                          description: Allow configuring all log levels.
                           enum:
                             - trace
                             - debug
@@ -693,6 +794,16 @@ spec:
                               description: "Requests describes the minimum amount of compute resources required. If Requests is omitted for a container, it defaults to Limits if that is explicitly specified, otherwise to an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/"
                               type: object
                           type: object
+                        rootLogLevel:
+                          description: Allow configuring the root log level.
+                          enum:
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
+                          nullable: true
+                          type: string
                       type: object
                     thingsSearch:
                       default:
@@ -704,8 +815,18 @@ spec:
                             type: string
                           description: "Additional system properties, which will be appended to the list of system properties.\n\nNote: Setting arbitrary system properties may break the deployment and may also not be compatible with future versions."
                           type: object
-                        logLevel:
+                        appLogLevel:
                           description: Allow configuring the application log level.
+                          enum:
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
+                          nullable: true
+                          type: string
+                        logLevel:
+                          description: Allow configuring all log levels.
                           enum:
                             - trace
                             - debug
@@ -737,6 +858,16 @@ spec:
                               description: "Requests describes the minimum amount of compute resources required. If Requests is omitted for a container, it defaults to Limits if that is explicitly specified, otherwise to an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/"
                               type: object
                           type: object
+                        rootLogLevel:
+                          description: Allow configuring the root log level.
+                          enum:
+                            - trace
+                            - debug
+                            - info
+                            - warn
+                            - error
+                          nullable: true
+                          type: string
                       type: object
                   type: object
                 swaggerUi:

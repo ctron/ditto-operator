@@ -20,6 +20,7 @@ mod rbac;
 mod swaggerui;
 
 use crate::controller::metrics::default_prometheus_port;
+use crate::crd::LogLevel::Debug;
 use crate::crd::{OAuthIssuer, ServiceSpec};
 use crate::{
     controller::{ingress::Ingress, nginx::Nginx, rbac::Rbac, swaggerui::SwaggerUi},
@@ -431,6 +432,7 @@ impl DittoController {
             Some("concierge-uri"),
             config_tracker,
             &ditto.spec.services.concierge,
+            Default::default(),
             default_system_properties(),
             |_| {},
             |_| {},
@@ -480,6 +482,7 @@ impl DittoController {
             None,
             config_tracker,
             &ditto.spec.services.gateway,
+            Default::default(),
             default_system_properties().append(props),
             |_| {},
             |_| {},
@@ -532,6 +535,18 @@ impl DittoController {
         deployment: Deployment,
         config_tracker: TrackerState,
     ) -> Result<Deployment> {
+        let mut envs = BTreeMap::new();
+
+        envs.insert(
+            "KAFKA_CONSUMER_THROTTLING_LIMIT".to_string(),
+            ditto
+                .spec
+                .kafka
+                .as_ref()
+                .and_then(|kafka| kafka.consumer_throttling_limit)
+                .map(|v| v.to_string()),
+        );
+
         self.reconcile_default_deployment(
             ditto,
             deployment,
@@ -539,6 +554,7 @@ impl DittoController {
             Some("connectivity-uri"),
             config_tracker,
             &ditto.spec.services.connectivity,
+            Default::default(),
             default_system_properties().append([(
                 "akka.cluster.distributed-data.durable.lmdb.dir".to_string(),
                 "/var/tmp/ditto/ddata".to_string(),
@@ -561,6 +577,7 @@ impl DittoController {
             Some("policies-uri"),
             config_tracker,
             &ditto.spec.services.policies,
+            Default::default(),
             default_system_properties(),
             |_| {},
             |_| {},
@@ -580,6 +597,7 @@ impl DittoController {
             Some("things-uri"),
             config_tracker,
             &ditto.spec.services.things,
+            Default::default(),
             default_system_properties(),
             |_| {},
             |_| {},
@@ -599,6 +617,7 @@ impl DittoController {
             Some("searchDB-uri"),
             config_tracker,
             &ditto.spec.services.things_search,
+            Default::default(),
             default_system_properties(),
             |_| {},
             |_| {},
@@ -613,6 +632,7 @@ impl DittoController {
         uri_key: Option<&str>,
         config_tracker: TrackerState,
         service_spec: &ServiceSpec,
+        envs: BTreeMap<String, Option<String>>,
         add_system_properties: SP,
         add_labels: L,
         add_annotations: A,
@@ -714,6 +734,10 @@ impl DittoController {
 
                 if let Some(uri_key) = uri_key {
                     container.add_env_from_secret("MONGO_DB_URI", prefix + "-mongodb-secret", uri_key)?;
+                }
+
+                for (k,v) in envs {
+                    container.set_env(k, v)?;
                 }
 
                 self.add_probes(container)?;
