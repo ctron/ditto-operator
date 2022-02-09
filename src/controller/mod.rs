@@ -20,7 +20,6 @@ mod rbac;
 mod swaggerui;
 
 use crate::controller::metrics::default_prometheus_port;
-use crate::crd::LogLevel::Debug;
 use crate::crd::{OAuthIssuer, ServiceSpec};
 use crate::{
     controller::{ingress::Ingress, nginx::Nginx, rbac::Rbac, swaggerui::SwaggerUi},
